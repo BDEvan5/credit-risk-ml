@@ -9,6 +9,7 @@ import pandas as pd
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 FEATURE_SQL_DIR = _REPO_ROOT / "sql" / "features"
+FEATURES_PATH = "data/features.parquet"
 
 
 def _normalize_sk_id_curr(df: pd.DataFrame) -> pd.DataFrame:
@@ -31,8 +32,8 @@ def load_feature_table(conn: duckdb.DuckDBPyConnection, sql_file: str | Path) ->
     return _normalize_sk_id_curr(df)
 
 
-def build_feature_matrix(conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Left-join per-applicant feature aggregates onto ``application_train``."""
+def _run_aggregations(conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Run feature SQL and merge onto ``application_train`` (uncached)."""
     app = conn.execute("SELECT * FROM application_train").df()
     app = _normalize_sk_id_curr(app)
 
@@ -45,3 +46,17 @@ def build_feature_matrix(conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         .merge(bureau_balance, on="SK_ID_CURR", how="left")
         .merge(previous_apps, on="SK_ID_CURR", how="left")
     )
+
+
+def build_feature_matrix(
+    conn: duckdb.DuckDBPyConnection, force_rebuild: bool = False
+) -> pd.DataFrame:
+    """Load or build the training feature matrix; cache at ``FEATURES_PATH`` under the repo root."""
+    path = _REPO_ROOT / FEATURES_PATH
+    if not force_rebuild and path.exists():
+        return pd.read_parquet(path)
+
+    df = _run_aggregations(conn)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+    return df
