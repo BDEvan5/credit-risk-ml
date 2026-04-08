@@ -8,21 +8,15 @@ WITH bc AS (
 app AS (
     SELECT
         trn.target,
-        COALESCE(bc.n_bureau, 0)::DOUBLE AS n_bureau
+        COALESCE(bc.n_bureau, 0)::BIGINT AS n_bureau
     FROM application_train AS trn
     LEFT JOIN bc ON trn.sk_id_curr = bc.sk_id_curr
-),
-bins AS (
-    SELECT
-        target,
-        NTILE(10) OVER (ORDER BY n_bureau) AS decile
-    FROM app
 )
 SELECT
-    decile,
+    n_bureau,
     COUNT(*) AS n,
     SUM(target) AS n_default,
     AVG(target) * 100 AS default_rate_pct
-FROM bins
-GROUP BY decile
-ORDER BY decile;
+FROM app
+GROUP BY n_bureau
+ORDER BY n_bureau;
