@@ -1,12 +1,16 @@
-select 
-    SK_ID_PREV,
-    count(*) as num_applications,
-    sum(amt_application) as total_amount_applied,
-    sum(amt_credit) as total_amount_credit,
-    sum(case when amt_credit > 0 then 1 else 0 end) as num_successful_applications,
-    num_successful_applications / num_applications as pct_successful, 
-    case when pct_successful < 1.0 then 1 else 0 end as was_rejected,
-    count(distinct CODE_REJECT_REASON) as num_unique_rejection_reasons,
-    min(case when CODE_REJECT_REASON is not null then CODE_REJECT_REASON end) as first_rejection_reason
-from previous_application
-group by SK_ID_PREV
+-- Per-applicant aggregates from previous_application (join key: SK_ID_CURR).
+SELECT
+    SK_ID_CURR,
+    COUNT(*) AS num_applications,
+    SUM(AMT_APPLICATION) AS total_amount_applied,
+    SUM(AMT_CREDIT) AS total_amount_credit,
+    SUM(CASE WHEN AMT_CREDIT > 0 THEN 1 ELSE 0 END) AS num_successful_applications,
+    SUM(CASE WHEN AMT_CREDIT > 0 THEN 1 ELSE 0 END)::DOUBLE / COUNT(*) AS pct_successful,
+    CASE
+        WHEN SUM(CASE WHEN AMT_CREDIT > 0 THEN 1 ELSE 0 END)::DOUBLE / COUNT(*) < 1.0 THEN 1
+        ELSE 0
+    END AS was_rejected,
+    COUNT(DISTINCT CODE_REJECT_REASON) AS num_unique_rejection_reasons,
+    MIN(CASE WHEN CODE_REJECT_REASON IS NOT NULL THEN CODE_REJECT_REASON END) AS first_rejection_reason
+FROM previous_application
+GROUP BY SK_ID_CURR;
