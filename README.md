@@ -47,7 +47,7 @@ EDA lives in `notebooks/eda.ipynb`. Each section runs **one** SQL file from `sql
 |------|-------------|
 | `bureau_summary.sql` | Per-applicant aggregates from `bureau` |
 | `bureau_balance_summary.sql` | Per-applicant monthly bureau status rollups |
-| `previous_applications.sql` | Per-`SK_ID_PREV` aggregates from `previous_application` |
+| `previous_applications.sql` | Per-`SK_ID_CURR` aggregates from `previous_application` |
 
 ## Planned pipeline
 
