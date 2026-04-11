@@ -1,7 +1,13 @@
-"""MLflow logging helpers for sklearn pipelines (params, metrics, model artifact)."""
+"""MLflow logging helpers for sklearn pipelines (params, metrics, model artifact).
+
+Tracking uses SQLite at the repo root (``mlflow.db``), not the deprecated file-store backend.
+To move existing runs from ``./mlruns`` into SQLite, see
+https://mlflow.org/docs/latest/self-hosting/migrate-from-file-store (``mlflow migrate-filestore``).
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import mlflow
@@ -12,8 +18,20 @@ from mlflow.models import infer_signature
 DEFAULT_EXPERIMENT = "credit-risk-modelling"
 
 
+def _repo_root() -> Path:
+    cwd = Path.cwd().resolve()
+    return cwd.parent if cwd.name == "notebooks" else cwd
+
+
+def _project_tracking_uri() -> str:
+    """SQLite tracking URI at the repo root (``mlflow.db``), not CWD when the kernel cwd is ``notebooks/``."""
+    db = _repo_root() / "mlflow.db"
+    return f"sqlite:///{db.resolve().as_posix()}"
+
+
 def set_experiment(name: str = DEFAULT_EXPERIMENT) -> str:
     """Point MLflow at the project experiment; returns the experiment id."""
+    mlflow.set_tracking_uri(_project_tracking_uri())
     return mlflow.set_experiment(name).experiment_id
 
 
@@ -55,8 +73,6 @@ def log_pipeline_run(
                 signature_sample,
                 model.predict_proba(signature_sample),
             )
-            mlflow.sklearn.log_model(
-                model, name="pipeline", signature=sig
-            )
+            mlflow.sklearn.log_model(model, name="pipeline", signature=sig)
         except Exception:
             mlflow.sklearn.log_model(model, name="pipeline")
