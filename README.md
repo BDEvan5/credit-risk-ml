@@ -18,12 +18,22 @@ Exploratory analysis asks how strong applicants’ characteristics are related t
 
 Index of EDA query files and what each returns: **[`sql/eda/README.md`](sql/eda/README.md)**.
 
+## Modelling
+
+I've added three default-prediction models in **[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb)** — logistic regression, XGBoost, and LightGBM — on the same train/test split and feature set, with runs logged to MLflow (`credit-risk-modelling`). On the **test** set, **ROC-AUC** is:
+
+- **Logistic regression** — 0.7565  
+- **XGBoost** — 0.7682  
+- **LightGBM** — 0.7691  
+
 ## Future work 🔮
 
-- Build a **feature pipeline** (see `sql/features/`) and join engineered tables to applications  
-- Train and evaluate a **default prediction model**, then iterate (calibration, validation strategy, deployment)
+- Productionise the training of xgboost model to a script and further optimise training.
+- Build a **feature pipeline** (see `sql/features/`) and join engineered tables to applications. There is currently a draft feature pipeline in `src/features.py` that can be expanded to include more features. Additionally features should be pruned to remove any that are not relevant to the model.
+- Calibrate model with a reliability diagram.
+- Deploy the model to a web service.
 
 
 ## Notes
 
-Run mlflow locally to view expeirments: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
+Run mlflow locally to view experiments: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
