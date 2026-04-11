@@ -58,5 +58,15 @@ def build_feature_matrix(
 
     df = _run_aggregations(conn)
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(path, index=False)
+    _write_features_parquet(df, path)
     return df
+
+
+def _write_features_parquet(df: pd.DataFrame, path: Path) -> None:
+    """Persist features to Parquet via DuckDB (avoids pandas ``to_parquet`` / pyarrow hotfix edge cases)."""
+    tmp = duckdb.connect()
+    try:
+        tmp.register("_feature_matrix", df)
+        tmp.execute("COPY _feature_matrix TO ? (FORMAT PARQUET)", [str(path.resolve())])
+    finally:
+        tmp.close()

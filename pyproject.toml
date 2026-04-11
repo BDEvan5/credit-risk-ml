@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.10.0",
-    "pyarrow>=14.0.0",
+    "pyarrow>=14.0.1",
     "duckdb>=1.5.1",
     "ipykernel>=7.2.0",
     "kaggle>=2.0.0",
