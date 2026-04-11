@@ -14,4 +14,4 @@ select
     sum(target) / count(*) * 100 as default_rate
 from amt_income_bins 
 group by bin 
-order by default_rate desc;
+order by bin;

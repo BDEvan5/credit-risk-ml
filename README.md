@@ -1,57 +1,24 @@
-# Credit Risk ML
+# Credit risk ML 💳
 
-Pipeline for predicting Home Credit Default Risk
+## Intro
 
-> This project builds a credit risk model that estimates the risk of default on a loan application.
+The aim of this project is to **model the probability of loan default** using application and bureau data, then **compare alternative feature sets and modeling choices** (e.g. baselines vs richer pipelines, validation discipline) so decisions are evidence-based. Longer term, the intent is to **move from experiments toward a production-grade pipeline**: reproducible data loading, feature builds, training/evaluation, and deployment hooks.
 
-## Dataset
+**Getting started with the data:** Download the [Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/data) competition files from Kaggle and place the CSVs under **`data/`**. Run **`sql/load.sql`** against DuckDB to create tables (e.g. `application_train`, `bureau`, …) and materialize **`data/home_credit.db`**. After that you can run SQL under `sql/eda/` or open the EDA notebook, which reads the same database.
 
-The dataset is from the [Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/data) competition on Kaggle.
-To replicate, the data can be downloaded and placed in the `data/` directory.
+## EDA 📊
 
-Data loading (CSV to DuckDB) is defined in `sql/load.sql`. Run that before EDA or feature builds.
+Exploratory analysis asks how strong applicants’ characteristics are related to **`TARGET`** (default vs not). See the notebook **[`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb)** for plots and tables (DuckDB → `data/home_credit.db`, queries from `sql/eda/`).
 
-## SQL layout
+- **Occupation and concentration** — Occupation is a strong predictor of default rate and a simple feature to use with 12 unique values.
+- **Payment burden (annuity / income)** — Higher payment burdens lead to higher default rates. Individuals in the lower median of payment burden are less likely to default. The single exception is the 10th decile, where a significant drop is seen from the 9th decile.
+- **Income × credit (leverage)** — The safest applicants tend to be on the edges of the credit amount distributions, with the highest risk applicants in the middle. Additionally, the lower the income, the larger the risk-band and the higher the default rate.
+- **Bureau depth, thin files, external scores** — More information about applications leads to significantly better predictions. Applicants with no bureau history, or very few lines on record, are more likely to default. Additionally, the available external signals provide signal on default rate.
+- **Age bands** — Older applicants are monotonically safer and less likely to default. The high-risk segment is concentrated among younger applicants.
 
-| Location | Purpose |
-|----------|---------|
-| `sql/load.sql` | Create tables from CSVs under `data/` |
-| `sql/eda/` | Exploratory queries: default rate by factor (deciles, buckets, class means) |
-| `sql/features/` | Queries that materialize **per-id feature tables** (aggregates for joining to applications) |
+Index of EDA query files and what each returns: **[`sql/eda/README.md`](sql/eda/README.md)**.
 
-## Exploratory data analysis
+## Future work 🔮
 
-EDA lives in `notebooks/eda.ipynb`. Each section runs **one** SQL file from `sql/eda/` or `sql/features/` against `data/home_credit.db`, shows a **3-row preview** of the result, then a **chart** when the query is an aggregated risk view. Feature-table scripts (under `sql/features/`) only show the preview and row counts.
-
-### `sql/eda/`
-
-| File | Description |
-|------|-------------|
-| `target_distribution.sql` | Class balance: counts and % of `TARGET` in train |
-| `amt_credit_risk.sql` | Default rate by decile of `AMT_CREDIT` |
-| `amt_income_risk.sql` | Default rate by decile of declared income |
-| `annuity_to_income_risk.sql` | Default rate by decile of annuity / income (payment burden) |
-| `credit_to_income_risk.sql` | Default rate by decile of credit / income (leverage) |
-| `goods_price_to_credit_risk.sql` | Default rate by decile of goods price / credit |
-| `age_risk.sql` | Default rate by age quartile (`DAYS_BIRTH`) |
-| `occupational_risk.sql` | Default rate by `OCCUPATION_TYPE` |
-| `external_scores_by_target.sql` | Mean `EXT_SOURCE_*` by `TARGET` |
-| `bureau_depth_risk.sql` | Default rate by decile of bureau trade-line count |
-| `prev_rejection_share_risk.sql` | Default rate by decile of prior rejection-reason share |
-| `installments_target_summary.sql` | Late installment row share by `TARGET` |
-| `credit_card_util_risk.sql` | Default rate by decile of mean CC balance / limit |
-
-### `sql/features/`
-
-| File | Description |
-|------|-------------|
-| `bureau_summary.sql` | Per-applicant aggregates from `bureau` |
-| `bureau_balance_summary.sql` | Per-applicant monthly bureau status rollups |
-| `previous_applications.sql` | Per-`SK_ID_CURR` aggregates from `previous_application` |
-
-## Planned pipeline
-
-- Feature engineering & model design
-- Model calibration
-- Survival analysis
-- Deploy a live API endpoint
+- Build a **feature pipeline** (see `sql/features/`) and join engineered tables to applications  
+- Train and evaluate a **default prediction model**, then iterate (calibration, validation strategy, deployment)
