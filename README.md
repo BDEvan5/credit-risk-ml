@@ -22,3 +22,8 @@ Index of EDA query files and what each returns: **[`sql/eda/README.md`](sql/eda/
 
 - Build a **feature pipeline** (see `sql/features/`) and join engineered tables to applications  
 - Train and evaluate a **default prediction model**, then iterate (calibration, validation strategy, deployment)
+
+
+## Notes
+
+Run mlflow locally to view expeirments: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
