@@ -172,6 +172,12 @@ def train(cfg: TrainConfig) -> Pipeline:
         )
 
     X = df.drop(columns=[cfg.target_col, cfg.id_col])
+    # Coerce pandas extension-array dtypes (Int64, boolean, etc.) to numpy types
+    # so that pd.NA becomes np.nan and sklearn imputers work correctly.
+    X = X.where(X.notna(), np.nan)
+    for col in X.select_dtypes(include="number").columns:
+        if pd.api.types.is_extension_array_dtype(X[col].dtype):
+            X[col] = X[col].astype("float64")
     y = df[cfg.target_col]
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
