@@ -40,11 +40,13 @@ def _run_aggregations(conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     bureau = load_feature_table(conn, "bureau_summary.sql")
     bureau_balance = load_feature_table(conn, "bureau_balance_summary.sql")
     previous_apps = load_feature_table(conn, "previous_applications.sql")
+    installments = load_feature_table(conn, "installments_payments.sql")
 
     return (
         app.merge(bureau, on="SK_ID_CURR", how="left")
         .merge(bureau_balance, on="SK_ID_CURR", how="left")
         .merge(previous_apps, on="SK_ID_CURR", how="left")
+        .merge(installments, on="SK_ID_CURR", how="left")
     )
 
 
