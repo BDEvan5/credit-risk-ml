@@ -123,7 +123,7 @@ class TrainConfig:
     learning_rate: float = 0.02
     subsample: float = 0.75
     colsample_bytree: float = 0.75
-    reg_lambda: float = 1.0
+    reg_lambda: float = 2.0
     reg_alpha: float = 0.05
     gamma: float = 0.0
     min_child_weight: float = 1.0
@@ -134,7 +134,7 @@ class TrainConfig:
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgb_1500est_lr002_sub075_alpha005"
+    run_name: str = "xgb_1500_sub075_lambda2_alpha005"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
