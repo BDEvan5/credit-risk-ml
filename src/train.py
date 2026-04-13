@@ -118,7 +118,7 @@ class TrainConfig:
     onehot_min_frequency: float = 0.001
     column_transformer_n_jobs: int = -1
 
-    n_estimators: int = 400
+    n_estimators: int = 600
     max_depth: int = 5
     learning_rate: float = 0.05
     subsample: float = 0.8
@@ -134,7 +134,7 @@ class TrainConfig:
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgboost_train"
+    run_name: str = "xgb_600est"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
