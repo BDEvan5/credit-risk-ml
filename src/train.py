@@ -14,8 +14,15 @@ import argparse
 import json
 import logging
 import subprocess
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+# Running `python src/train.py` puts `src/` on sys.path, not the repo root, so
+# `import src.*` fails unless the project root is added (``python -m src.train`` does this).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import duckdb
 import joblib
@@ -33,8 +40,6 @@ from src.metrics import binary_classifier_metrics, format_metrics_lines
 from src.mlflow_helpers import DEFAULT_EXPERIMENT, log_pipeline_run
 
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @dataclass
