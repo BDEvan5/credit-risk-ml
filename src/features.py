@@ -37,14 +37,26 @@ def _run_aggregations(conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     app = conn.execute("SELECT * FROM application_train").df()
     app = _normalize_sk_id_curr(app)
 
+    app_ratios = load_feature_table(conn, "application_ratios.sql")
     bureau = load_feature_table(conn, "bureau_summary.sql")
     bureau_balance = load_feature_table(conn, "bureau_balance_summary.sql")
     previous_apps = load_feature_table(conn, "previous_applications.sql")
+    installments = load_feature_table(conn, "installments_payments_summary.sql")
+    pos_cash = load_feature_table(conn, "pos_cash_summary.sql")
+    credit_card = load_feature_table(conn, "credit_card_summary.sql")
+
+    # Drop base columns duplicated by ``application_ratios.sql`` (keep engineered ratios only).
+    ratio_cols = [c for c in app_ratios.columns if c != "SK_ID_CURR"]
+    app_slim = app.drop(columns=[c for c in ratio_cols if c in app.columns], errors="ignore")
 
     return (
-        app.merge(bureau, on="SK_ID_CURR", how="left")
+        app_slim.merge(app_ratios, on="SK_ID_CURR", how="left")
+        .merge(bureau, on="SK_ID_CURR", how="left")
         .merge(bureau_balance, on="SK_ID_CURR", how="left")
         .merge(previous_apps, on="SK_ID_CURR", how="left")
+        .merge(installments, on="SK_ID_CURR", how="left")
+        .merge(pos_cash, on="SK_ID_CURR", how="left")
+        .merge(credit_card, on="SK_ID_CURR", how="left")
     )
 
 
