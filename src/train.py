@@ -81,6 +81,21 @@ def _log_autoresearch_summary(
     )
     for line in lines:
         logger.info("%s", line)
+def _sklearn_safe_features(X: pd.DataFrame) -> pd.DataFrame:
+    """Normalize DuckDB/pandas nulls and dtypes for sklearn ``SimpleImputer``.
+
+    DuckDB ``.df()`` can return ``pd.NA`` (and nullable extension dtypes). Object-column
+    imputation uses equality checks that raise on ``pd.NA``; nullable integers may also be
+    excluded from ``select_dtypes(include=[np.number])`` depending on pandas version.
+    """
+    out = X.replace(pd.NA, np.nan)
+    for col in out.columns:
+        s = out[col]
+        if pd.api.types.is_extension_array_dtype(s.dtype) and pd.api.types.is_numeric_dtype(
+            s.dtype
+        ):
+            out[col] = s.astype("float64")
+    return out
 
 
 @dataclass
@@ -92,7 +107,7 @@ class TrainConfig:
     id_col: str = "SK_ID_CURR"
 
     duckdb_path: Path = field(default_factory=lambda: _REPO_ROOT / "data" / "home_credit.db")
-    use_cached_features: bool = True
+    use_cached_features: bool = False
     sample_frac: float | None = None
     test_size: float = 0.2
     validation_size: float = 0.15
@@ -178,6 +193,7 @@ def train(cfg: TrainConfig) -> Pipeline:
     for col in X.select_dtypes(include="number").columns:
         if pd.api.types.is_extension_array_dtype(X[col].dtype):
             X[col] = X[col].astype("float64")
+    X = _sklearn_safe_features(df.drop(columns=[cfg.target_col, cfg.id_col]))
     y = df[cfg.target_col]
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
