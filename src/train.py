@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import resource
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -40,6 +42,45 @@ from src.metrics import binary_classifier_metrics, format_metrics_lines
 from src.mlflow_helpers import DEFAULT_EXPERIMENT, log_pipeline_run
 
 logger = logging.getLogger(__name__)
+
+
+def _peak_rss_mb() -> float:
+    """Best-effort peak resident set size (MB) for this process (POSIX ``getrusage``)."""
+    try:
+        ru = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except (OSError, ValueError):
+        return float("nan")
+    if sys.platform == "darwin":
+        return ru / (1024.0 * 1024.0)
+    return ru / 1024.0
+
+
+def _log_autoresearch_summary(
+    *,
+    roc_auc: float,
+    training_seconds: float,
+    total_seconds: float,
+    n_train: int,
+    n_test: int,
+    n_features: int,
+) -> None:
+    """Print a fixed-width block for agents (grep ``^roc_auc:`` / ``^peak_memory_mb:``)."""
+    def _num(x: float) -> str:
+        return "nan" if x != x else f"{x:.6f}"
+
+    peak_mb = _peak_rss_mb()
+    lines = (
+        "---",
+        f"roc_auc:          {_num(roc_auc)}",
+        f"training_seconds: {training_seconds:.1f}",
+        f"total_seconds:    {total_seconds:.1f}",
+        f"peak_memory_mb:   {_num(peak_mb)}",
+        f"n_train:          {n_train}",
+        f"n_test:           {n_test}",
+        f"n_features:       {n_features}",
+    )
+    for line in lines:
+        logger.info("%s", line)
 
 
 @dataclass
@@ -102,6 +143,9 @@ def load_config(path: Path | None) -> TrainConfig:
 
 
 def train(cfg: TrainConfig) -> Pipeline:
+    t_total_start = time.perf_counter()
+    training_seconds = 0.0
+
     db = cfg.duckdb_path
     if not db.exists():
         raise FileNotFoundError(
@@ -205,6 +249,7 @@ def train(cfg: TrainConfig) -> Pipeline:
         X.shape[1],
     )
 
+    t_fit_start = time.perf_counter()
     if cfg.early_stopping_rounds is None:
         pipeline.fit(X_train, y_train)
     else:
@@ -223,6 +268,7 @@ def train(cfg: TrainConfig) -> Pipeline:
             early_stopping_rounds=cfg.early_stopping_rounds,
             verbose=False,
         )
+    training_seconds = time.perf_counter() - t_fit_start
 
     y_score = pipeline.predict_proba(X_test)[:, 1]
     y_pred = pipeline.predict(X_test)
@@ -269,6 +315,17 @@ def train(cfg: TrainConfig) -> Pipeline:
 
     logger.info("Test metrics:\n%s", format_metrics_lines(test_metrics))
 
+    total_seconds = time.perf_counter() - t_total_start
+    roc_auc = float(test_metrics.get("roc_auc", float("nan")))
+    _log_autoresearch_summary(
+        roc_auc=roc_auc,
+        training_seconds=training_seconds,
+        total_seconds=total_seconds,
+        n_train=len(X_train),
+        n_test=len(X_test),
+        n_features=int(X.shape[1]),
+    )
+
     if cfg.model_output_path is not None:
         out = Path(cfg.model_output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -291,13 +348,35 @@ def main() -> int:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=None,
+        help="Optional path to write the same logs as stderr (e.g. run.log for autoresearch).",
+    )
+    parser.add_argument(
+        "--rebuild-features",
+        action="store_true",
+        help="Rebuild data/features.parquet from SQL (required after edits to sql/features/ or features.py).",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    train(load_config(args.config))
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(getattr(logging, args.log_level))
+    sh = logging.StreamHandler(sys.stderr)
+    sh.setFormatter(fmt)
+    root.addHandler(sh)
+    if args.log_file is not None:
+        args.log_file.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(args.log_file, mode="w", encoding="utf-8")
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+    cfg = load_config(args.config)
+    if args.rebuild_features:
+        cfg.use_cached_features = False
+    train(cfg)
     return 0
 
 
