@@ -12,5 +12,7 @@ SELECT
     EXT_SOURCE_2 * EXT_SOURCE_3 AS ext23_product,
     REGION_POPULATION_RELATIVE * EXT_SOURCE_1 AS ext1_times_pop_rel,
     REGION_POPULATION_RELATIVE * EXT_SOURCE_2 AS ext2_times_pop_rel,
-    REGION_POPULATION_RELATIVE * EXT_SOURCE_3 AS ext3_times_pop_rel
+    REGION_POPULATION_RELATIVE * EXT_SOURCE_3 AS ext3_times_pop_rel,
+    -- DAYS_EMPLOYED = 365243 is a sentinel for retirees/pensioners (not a real employment duration)
+    CASE WHEN DAYS_EMPLOYED = 365243 THEN 1 ELSE 0 END AS days_employed_anom
 FROM application_train;
