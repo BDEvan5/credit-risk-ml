@@ -134,7 +134,7 @@ class TrainConfig:
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgb_2000_depth4_sub075_lambda2"
+    run_name: str = "xgb_2000_depth4_ext_source_mean_range"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
