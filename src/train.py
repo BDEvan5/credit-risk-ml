@@ -118,9 +118,9 @@ class TrainConfig:
     onehot_min_frequency: float = 0.001
     column_transformer_n_jobs: int = -1
 
-    n_estimators: int = 4000
+    n_estimators: int = 2000
     max_depth: int = 4
-    learning_rate: float = 0.01
+    learning_rate: float = 0.02
     subsample: float = 0.75
     colsample_bytree: float = 0.75
     reg_lambda: float = 2.0
@@ -134,7 +134,7 @@ class TrainConfig:
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgb_4000_lr001_depth4_sub075"
+    run_name: str = "xgb_2000_depth4_sub075_lambda2"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
