@@ -122,8 +122,7 @@ class TrainConfig:
     max_depth: int = 4
     learning_rate: float = 0.02
     subsample: float = 0.75
-    colsample_bytree: float = 1.0
-    colsample_bynode: float = 0.75
+    colsample_bytree: float = 0.75
     reg_lambda: float = 2.0
     reg_alpha: float = 0.05
     gamma: float = 0.0
@@ -135,7 +134,7 @@ class TrainConfig:
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgb_2000_depth4_sub075_colbynode075"
+    run_name: str = "xgb_2000_depth4_sub075_lambda2"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
@@ -251,7 +250,6 @@ def train(cfg: TrainConfig) -> Pipeline:
         learning_rate=cfg.learning_rate,
         subsample=cfg.subsample,
         colsample_bytree=cfg.colsample_bytree,
-        colsample_bynode=cfg.colsample_bynode,
         reg_lambda=cfg.reg_lambda,
         reg_alpha=cfg.reg_alpha,
         gamma=cfg.gamma,
