@@ -69,10 +69,6 @@ def build_feature_matrix(
         return pd.read_parquet(path)
 
     df = _run_aggregations(conn)
-    # DAYS_EMPLOYED = 365243 is a sentinel for "not employed" (retirees/pensioners).
-    # Replace with NaN so the numeric imputer doesn't treat it as a real employment duration.
-    if "DAYS_EMPLOYED" in df.columns:
-        df["DAYS_EMPLOYED"] = df["DAYS_EMPLOYED"].replace(365243, float("nan"))
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_features_parquet(df, path)
     return df
