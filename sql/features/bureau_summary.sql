@@ -19,6 +19,18 @@ SELECT
     MAX(DAYS_CREDIT_ENDDATE) AS bureau_max_days_credit_enddate,
     SUM(DAYS_CREDIT_ENDDATE - DAYS_CREDIT) AS bureau_sum_credit_duration,
     SUM(AMT_CREDIT_SUM_DEBT) / NULLIF(SUM(AMT_CREDIT_SUM), 0) AS bureau_debt_to_credit_ratio,
-    SUM(AMT_CREDIT_SUM_OVERDUE) / NULLIF(SUM(AMT_CREDIT_SUM), 0) AS bureau_overdue_to_credit_ratio
+    SUM(AMT_CREDIT_SUM_OVERDUE) / NULLIF(SUM(AMT_CREDIT_SUM), 0) AS bureau_overdue_to_credit_ratio,
+    -- Recency: most recent bureau record start and update (less negative = more recent)
+    MAX(DAYS_CREDIT) AS bureau_most_recent_credit_days,
+    MAX(DAYS_CREDIT_UPDATE) AS bureau_most_recent_update_days,
+    -- Active credits with any current overdue
+    SUM(CASE WHEN CREDIT_ACTIVE = 'Active' AND CREDIT_DAY_OVERDUE > 0 THEN 1 ELSE 0 END) AS bureau_n_active_overdue,
+    -- Active debt-to-credit ratio (tighter signal than all-credit ratio)
+    SUM(CASE WHEN CREDIT_ACTIVE = 'Active' THEN AMT_CREDIT_SUM_DEBT ELSE 0 END)
+        / NULLIF(SUM(CASE WHEN CREDIT_ACTIVE = 'Active' THEN AMT_CREDIT_SUM ELSE 0 END), 0) AS bureau_active_debt_to_credit,
+    -- Credit type diversity
+    COUNT(DISTINCT CREDIT_TYPE) AS bureau_n_credit_types,
+    -- Average prolongation count (sign of repayment difficulty)
+    AVG(CNT_CREDIT_PROLONG) AS bureau_mean_prolongation
 FROM bureau
 GROUP BY SK_ID_CURR;

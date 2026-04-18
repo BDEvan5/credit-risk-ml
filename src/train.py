@@ -3,14 +3,11 @@
 Run from the repository root::
 
     uv run python -m src.train
-    uv run python -m src.train --config my_overrides.json
 
-Optional JSON is merged onto :class:`TrainConfig` (flat keys, same names as fields).
+Edit :class:`TrainConfig` defaults for hyperparameters and paths. For one-off overrides
+from JSON (e.g. ``rebuild_features``), call :func:`load_config` from a notebook or REPL.
 """
 
-from __future__ import annotations
-
-import argparse
 import json
 import logging
 import subprocess
@@ -69,6 +66,7 @@ class TrainConfig:
 
     duckdb_path: Path = field(default_factory=lambda: _REPO_ROOT / "data" / "home_credit.db")
     use_cached_features: bool = False
+    rebuild_features: bool = False
     sample_frac: float | None = None
     test_size: float = 0.2
     validation_size: float = 0.15
@@ -79,13 +77,13 @@ class TrainConfig:
     onehot_min_frequency: float = 0.001
     column_transformer_n_jobs: int = -1
 
-    n_estimators: int = 400
-    max_depth: int = 5
-    learning_rate: float = 0.05
-    subsample: float = 0.8
-    colsample_bytree: float = 0.8
-    reg_lambda: float = 1.0
-    reg_alpha: float = 0.0
+    n_estimators: int = 2000
+    max_depth: int = 4
+    learning_rate: float = 0.02
+    subsample: float = 0.75
+    colsample_bytree: float = 0.75
+    reg_lambda: float = 2.0
+    reg_alpha: float = 0.05
     gamma: float = 0.0
     min_child_weight: float = 1.0
     max_delta_step: float = 0.0
@@ -95,7 +93,7 @@ class TrainConfig:
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgboost_train"
+    run_name: str = "xgb_2000_depth4_sub075_lambda2"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
@@ -128,7 +126,8 @@ def train(cfg: TrainConfig) -> Pipeline:
     conn = duckdb.connect(str(db))
     try:
         df = build_feature_matrix(
-            conn, force_rebuild=not cfg.use_cached_features
+            conn,
+            force_rebuild=cfg.rebuild_features or not cfg.use_cached_features,
         )
     finally:
         conn.close()
@@ -144,6 +143,13 @@ def train(cfg: TrainConfig) -> Pipeline:
             f"Expected columns {cfg.target_col!r} and {cfg.id_col!r} in feature frame."
         )
 
+    X = df.drop(columns=[cfg.target_col, cfg.id_col])
+    # Coerce pandas extension-array dtypes (Int64, boolean, etc.) to numpy types
+    # so that pd.NA becomes np.nan and sklearn imputers work correctly.
+    X = X.where(X.notna(), np.nan)
+    for col in X.select_dtypes(include="number").columns:
+        if pd.api.types.is_extension_array_dtype(X[col].dtype):
+            X[col] = X[col].astype("float64")
     X = _sklearn_safe_features(df.drop(columns=[cfg.target_col, cfg.id_col]))
     y = df[cfg.target_col]
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
@@ -296,25 +302,8 @@ def train(cfg: TrainConfig) -> Pipeline:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Train XGBoost credit-default pipeline.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Optional JSON file of flat TrainConfig overrides.",
-    )
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-    )
-    args = parser.parse_args()
-
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    train(load_config(args.config))
+    logging.basicConfig(level=logging.INFO)
+    train(TrainConfig())
     return 0
 
 
