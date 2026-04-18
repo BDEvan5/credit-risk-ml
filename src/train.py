@@ -3,14 +3,11 @@
 Run from the repository root::
 
     uv run python -m src.train
-    uv run python -m src.train --config my_overrides.json
 
-Optional JSON is merged onto :class:`TrainConfig` (flat keys, same names as fields).
+Edit :class:`TrainConfig` defaults for hyperparameters and paths. For one-off overrides
+from JSON (e.g. ``rebuild_features``), call :func:`load_config` from a notebook or REPL.
 """
 
-from __future__ import annotations
-
-import argparse
 import json
 import logging
 import subprocess
@@ -69,6 +66,7 @@ class TrainConfig:
 
     duckdb_path: Path = field(default_factory=lambda: _REPO_ROOT / "data" / "home_credit.db")
     use_cached_features: bool = False
+    rebuild_features: bool = False
     sample_frac: float | None = None
     test_size: float = 0.2
     validation_size: float = 0.15
@@ -128,7 +126,8 @@ def train(cfg: TrainConfig) -> Pipeline:
     conn = duckdb.connect(str(db))
     try:
         df = build_feature_matrix(
-            conn, force_rebuild=not cfg.use_cached_features
+            conn,
+            force_rebuild=cfg.rebuild_features or not cfg.use_cached_features,
         )
     finally:
         conn.close()
@@ -303,36 +302,8 @@ def train(cfg: TrainConfig) -> Pipeline:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Train XGBoost credit-default pipeline.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Optional JSON file of flat TrainConfig overrides.",
-    )
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-    )
-    parser.add_argument(
-        "--rebuild-features",
-        action="store_true",
-        help="Rebuild data/features.parquet from SQL (required after edits to sql/features/ or features.py).",
-    )
-    args = parser.parse_args()
-
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    root = logging.getLogger()
-    root.handlers.clear()
-    root.setLevel(getattr(logging, args.log_level))
-    sh = logging.StreamHandler(sys.stderr)
-    sh.setFormatter(fmt)
-    root.addHandler(sh)
-    cfg = load_config(args.config)
-    if args.rebuild_features:
-        cfg.use_cached_features = False
-    train(cfg)
+    logging.basicConfig(level=logging.INFO)
+    train(TrainConfig())
     return 0
 
 
