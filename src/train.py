@@ -130,14 +130,11 @@ class TrainConfig:
     max_delta_step: float = 0.0
     n_jobs: int = -1
     tree_method: str = "hist"
-    booster: str = "dart"
-    rate_drop: float = 0.1
-    skip_drop: float = 0.5
     eval_metric: str = "logloss"
     early_stopping_rounds: int | None = None
 
     experiment_name: str = DEFAULT_EXPERIMENT
-    run_name: str = "xgb_dart_rate_drop01_skip05_depth4"
+    run_name: str = "xgb_2000_depth4_sub075_lambda2"
     signature_sample_rows: int = 500
 
     model_output_path: Path | None = field(
@@ -261,9 +258,6 @@ def train(cfg: TrainConfig) -> Pipeline:
         random_state=cfg.random_state,
         n_jobs=cfg.n_jobs,
         tree_method=cfg.tree_method,
-        booster=cfg.booster,
-        rate_drop=cfg.rate_drop,
-        skip_drop=cfg.skip_drop,
         eval_metric=cfg.eval_metric,
         scale_pos_weight=scale_pos_weight,
     )
