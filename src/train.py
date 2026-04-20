@@ -15,11 +15,6 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-# Running `python src/train.py` puts `src/` on sys.path, not the repo root, so
-# `import src.*` fails unless the project root is added (``python -m src.train`` does this).
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
 
 import duckdb
 import joblib
@@ -38,6 +33,12 @@ from src.mlflow_helpers import DEFAULT_EXPERIMENT, log_pipeline_run
 
 logger = logging.getLogger(__name__)
 
+# Running `python src/train.py` puts `src/` on sys.path, not the repo root, so
+# `import src.*` fails unless the project root is added (``python -m src.train`` does this).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 
 def _sklearn_safe_features(X: pd.DataFrame) -> pd.DataFrame:
     """Normalize DuckDB/pandas nulls and dtypes for sklearn ``SimpleImputer``.
@@ -49,9 +50,9 @@ def _sklearn_safe_features(X: pd.DataFrame) -> pd.DataFrame:
     out = X.replace(pd.NA, np.nan)
     for col in out.columns:
         s = out[col]
-        if pd.api.types.is_extension_array_dtype(s.dtype) and pd.api.types.is_numeric_dtype(
+        if pd.api.types.is_extension_array_dtype(
             s.dtype
-        ):
+        ) and pd.api.types.is_numeric_dtype(s.dtype):
             out[col] = s.astype("float64")
     return out
 
@@ -64,7 +65,9 @@ class TrainConfig:
     target_col: str = "TARGET"
     id_col: str = "SK_ID_CURR"
 
-    duckdb_path: Path = field(default_factory=lambda: _REPO_ROOT / "data" / "home_credit.db")
+    duckdb_path: Path = field(
+        default_factory=lambda: _REPO_ROOT / "data" / "home_credit.db"
+    )
     use_cached_features: bool = False
     rebuild_features: bool = False
     sample_frac: float | None = None
@@ -116,13 +119,13 @@ def load_config(path: Path | None) -> TrainConfig:
     return TrainConfig(**d)
 
 
-def train(cfg: TrainConfig) -> Pipeline:
+def _load_feature_xy(cfg: TrainConfig) -> tuple[pd.DataFrame, pd.Series]:
+    """Load DuckDB features into ``X``, ``y`` (same preprocessing as :func:`train`)."""
     db = cfg.duckdb_path
     if not db.exists():
         raise FileNotFoundError(
             f"DuckDB database not found at {db}. Load data per project README."
         )
-
     conn = duckdb.connect(str(db))
     try:
         df = build_feature_matrix(
@@ -152,6 +155,24 @@ def train(cfg: TrainConfig) -> Pipeline:
             X[col] = X[col].astype("float64")
     X = _sklearn_safe_features(df.drop(columns=[cfg.target_col, cfg.id_col]))
     y = df[cfg.target_col]
+    return X, y
+
+
+def load_test_holdout(cfg: TrainConfig) -> tuple[pd.DataFrame, pd.Series]:
+    """Same stratified test split as :func:`train` (for eval / reporting tools)."""
+    X, y = _load_feature_xy(cfg)
+    _, X_test, _, y_test = train_test_split(
+        X,
+        y,
+        test_size=cfg.test_size,
+        random_state=cfg.random_state,
+        stratify=y,
+    )
+    return X_test, y_test
+
+
+def train(cfg: TrainConfig) -> Pipeline:
+    X, y = _load_feature_xy(cfg)
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
 
@@ -281,13 +302,17 @@ def train(cfg: TrainConfig) -> Pipeline:
         pass
 
     n_sig = min(cfg.signature_sample_rows, len(X_test))
-    log_pipeline_run(
+    mlflow_run_id, mlflow_run_name = log_pipeline_run(
         cfg.run_name,
         pipeline,
         metrics=test_metrics,
         params=mlflow_params,
         signature_sample=X_test.iloc[:n_sig],
         experiment_name=cfg.experiment_name,
+    )
+    print(
+        f"MLflow run name={mlflow_run_name!r} run_id={mlflow_run_id}",
+        flush=True,
     )
 
     logger.info("Test metrics:\n%s", format_metrics_lines(test_metrics))
