@@ -20,20 +20,49 @@ Index of EDA query files and what each returns: **[`sql/eda/README.md`](sql/eda/
 
 ## Modelling
 
-I've added three default-prediction models in **[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb)** — logistic regression, XGBoost, and LightGBM — on the same train/test split and feature set, with runs logged to MLflow (`credit-risk-modelling`). On the **test** set, **ROC-AUC** is:
+Notebook **[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb)** compares logistic regression, XGBoost, and LightGBM on one feature set (MLflow experiment `credit-risk-modelling`). Scripted training and the same metrics live in **`src/train.py`** (`uv run python -m src.train`).
 
-- **Logistic regression** — 0.7565  
-- **XGBoost** — 0.7682  
-- **LightGBM** — 0.7691  
+<!-- MLFLOW_README_SYNC_BEGIN -->
+
+_Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from_mlflow.py`_
+
+**MLflow run** `8272b5c1491c471f8a9c7255a9c42b79` — **xgb_2000_depth4_sub075_lambda2**
+
+| Metric | Test |
+| --- | --- |
+| ROC-AUC | 0.7921 |
+| Gini (2×AUC − 1) | 0.5843 |
+| Average precision (PR-AUC) | 0.2929 |
+| KS statistic | 0.4477 |
+| Accuracy | 0.7459 |
+
+![ROC and precision–recall (test holdout, same split as training)](docs/figures/mlflow_eval_curves.png)
+
+<!-- MLFLOW_README_SYNC_END -->
 
 ## Future work 🔮
 
-- Productionise the training of xgboost model to a script and further optimise training.
-- Build a **feature pipeline** (see `sql/features/`) and join engineered tables to applications. There is currently a draft feature pipeline in `src/features.py` that can be expanded to include more features. Additionally features should be pruned to remove any that are not relevant to the model.
-- Calibrate model with a reliability diagram.
-- Deploy the model to a web service.
+- Calibrate model with a reliability diagram. Additionally, add some explainability to understand the model's decisions.
+- Deploy the model to a web service to enable real-time scoring.
 
 
-## Notes
+## Commands to run the project
 
-Run mlflow locally to view experiments: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
+Run **`mlflow`** locally to view experiments: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
+
+### Training and README metrics
+
+From the **repository root**, with **`data/home_credit.db`** in place, train the XGBoost pipeline and log a run to **`mlflow.db`** (the script prints the MLflow run id when finished):
+
+```bash
+uv run python -m src.train
+```
+This script internally calls the `build_feature_matrix` function to build the feature matrix and then trains the model.
+
+To **refresh the Modelling section** in this README (metrics table, ROC/PR figure) from MLflow, run the sync script. It uses the run id configured in the script unless you override it with `--run-id`:
+
+```bash
+uv run python scripts/sync_readme_from_mlflow.py --run-id 8272b5c1491c471f8a9c7255a9c42b79
+```
+
+The script will update the README with the latest metrics and figure.

@@ -52,15 +52,20 @@ def log_pipeline_run(
     params: dict[str, Any],
     signature_sample,
     experiment_name: str = DEFAULT_EXPERIMENT,
-) -> None:
+) -> tuple[str, str]:
     """
     One MLflow run: experiment, tags, params, metrics, and the fitted Pipeline as ``pipeline/``.
 
     ``signature_sample`` should be a small slice of the feature matrix (e.g. ``X_test.iloc[:500]``)
     so MLflow can record inputs/outputs for the model registry.
+
+    Returns ``(run_id, run_name)`` as assigned by the tracking store (``run_name`` may differ from
+    the requested name if MLflow disambiguates).
     """
     set_experiment(experiment_name)
-    with mlflow.start_run(run_name=run_name):
+    with mlflow.start_run(run_name=run_name) as active:
+        run_id = active.info.run_id
+        resolved_name = active.info.run_name
         mlflow.set_tag("model_name", run_name)
         for key, val in params.items():
             _safe_log_param(key, val)
@@ -76,3 +81,4 @@ def log_pipeline_run(
             mlflow.sklearn.log_model(model, name="pipeline", signature=sig)
         except Exception:
             mlflow.sklearn.log_model(model, name="pipeline")
+    return run_id, resolved_name
