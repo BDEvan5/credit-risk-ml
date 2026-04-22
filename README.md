@@ -26,23 +26,45 @@ Notebook **[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb)** comp
 
 _Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from_mlflow.py`_
 
-**MLflow run** `8272b5c1491c471f8a9c7255a9c42b79` — **xgb_2000_depth4_sub075_lambda2**
+**MLflow run** `c6598c78fb0b46e18bbfb8707f0c5508` — **xgb_2000_depth4_sub075_lambda2**
 
 | Metric | Test |
 | --- | --- |
-| ROC-AUC | 0.7921 |
-| Gini (2×AUC − 1) | 0.5843 |
-| Average precision (PR-AUC) | 0.2929 |
-| KS statistic | 0.4477 |
-| Accuracy | 0.7459 |
+| ROC-AUC | 0.7898 |
+| Gini (2×AUC − 1) | 0.5796 |
+| Average precision (PR-AUC) | 0.2904 |
+| KS statistic | 0.4418 |
+| Accuracy | 0.7483 |
 
 ![ROC and precision–recall (test holdout, same split as training)](docs/figures/mlflow_eval_curves.png)
 
 <!-- MLFLOW_README_SYNC_END -->
 
+## Calibration and explainability
+
+For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similar scored accounts (after binning), not merely rank applicants. **[`notebooks/03_calibration.ipynb`](notebooks/03_calibration.ipynb)** compares calibration methods (reliability diagrams, **Platt** and **isotonic** `CalibratedClassifierCV`, Brier, **ECE**, business-cost thresholding). **[`notebooks/04_explainability.ipynb`](notebooks/04_explainability.ipynb)** has **SHAP** global and local plots.
+
+<!-- MLFLOW_CALIB_README_SYNC_BEGIN -->
+
+_Auto-generated from MLflow — same command as the Modelling block._
+
+**MLflow run** `c6598c78fb0b46e18bbfb8707f0c5508` — **xgb_2000_depth4_sub075_lambda2** (isotonic `CalibratedClassifierCV` on a stratified row holdout before booster fit; `calibration_holdout_frac=0.15`).
+
+| Metric | Test holdout |
+| --- | --- |
+| Brier score (uncalibrated) | 0.1709 |
+| Brier score (isotonic calibrated) | 0.0655 |
+| ROC-AUC (uncalibrated) | 0.7898 |
+| ROC-AUC (calibrated proba) | 0.7891 |
+
+![Reliability diagram — mean predicted vs observed default rate (test holdout)](docs/figures/reliability_raw_vs_calibrated.png)
+
+<!-- MLFLOW_CALIB_README_SYNC_END -->
+
+Training (`uv run python -m src.train`) writes **`model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and **`model/model_calibrated.pkl`** (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus a raw-vs-calibrated reliability figure to MLflow.
+
 ## Future work 🔮
 
-- Calibrate model with a reliability diagram. Additionally, add some explainability to understand the model's decisions.
 - Deploy the model to a web service to enable real-time scoring.
 
 
@@ -59,10 +81,10 @@ uv run python -m src.train
 ```
 This script internally calls the `build_feature_matrix` function to build the feature matrix and then trains the model.
 
-To **refresh the Modelling section** in this README (metrics table, ROC/PR figure) from MLflow, run the sync script. It uses the run id configured in the script unless you override it with `--run-id`:
+To **refresh the Modelling and Calibration sections** in this README (metrics tables, ROC/PR figure, Brier/AUC table, reliability diagram) from MLflow, run the sync script. It uses the run id configured in the script unless you override it with `--run-id`:
 
 ```bash
-uv run python scripts/sync_readme_from_mlflow.py --run-id 8272b5c1491c471f8a9c7255a9c42b79
+uv run python scripts/sync_readme_from_mlflow.py --run-id c6598c78fb0b46e18bbfb8707f0c5508
 ```
 
-The script will update the README with the latest metrics and figure.
+The script updates `docs/figures/mlflow_eval_curves.png`, `docs/figures/reliability_raw_vs_calibrated.png`, and the two marked README blocks.

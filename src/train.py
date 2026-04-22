@@ -1,11 +1,12 @@
-"""Train an XGBoost credit-default model (sklearn Pipeline) and log to MLflow.
+"""Train an XGBoost credit-default model (sklearn Pipeline), isotonic-calibrate, and log to MLflow.
 
 Run from the repository root::
 
     uv run python -m src.train
 
-Edit :class:`TrainConfig` defaults for hyperparameters and paths. For one-off overrides
-from JSON (e.g. ``rebuild_features``), call :func:`load_config` from a notebook or REPL.
+Writes ``model/model_uncalibrated.pkl`` (preprocess + booster) and ``model/model_calibrated.pkl``
+(``CalibratedClassifierCV`` wrapping the frozen pipeline). Edit :class:`TrainConfig` for
+hyperparameters and paths. For JSON overrides, use :func:`load_config`.
 """
 
 import json
@@ -20,8 +21,11 @@ import duckdb
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.compose import ColumnTransformer
+from sklearn.frozen import FrozenEstimator
 from sklearn.impute import SimpleImputer
+from sklearn.metrics import brier_score_loss
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
@@ -29,7 +33,7 @@ from xgboost import XGBClassifier
 
 from src.features import build_feature_matrix
 from src.metrics import binary_classifier_metrics, format_metrics_lines
-from src.mlflow_helpers import DEFAULT_EXPERIMENT, log_pipeline_run
+from src.mlflow_helpers import DEFAULT_EXPERIMENT, log_credit_train_run
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,9 @@ class TrainConfig:
     sample_frac: float | None = None
     test_size: float = 0.2
     validation_size: float = 0.15
+    #: Stratified fraction of the non-test pool reserved for isotonic calibration only
+    #: (not used to fit the booster).
+    calibration_holdout_frac: float = 0.15
 
     numeric_imputer_strategy: str = "median"
     categorical_imputer_strategy: str = "most_frequent"
@@ -99,8 +106,11 @@ class TrainConfig:
     run_name: str = "xgb_2000_depth4_sub075_lambda2"
     signature_sample_rows: int = 500
 
-    model_output_path: Path | None = field(
-        default_factory=lambda: _REPO_ROOT / "model" / "xgb_pipeline.joblib"
+    model_uncalibrated_path: Path | None = field(
+        default_factory=lambda: _REPO_ROOT / "model" / "model_uncalibrated.pkl"
+    )
+    model_calibrated_path: Path | None = field(
+        default_factory=lambda: _REPO_ROOT / "model" / "model_calibrated.pkl"
     )
 
 
@@ -112,7 +122,7 @@ def load_config(path: Path | None) -> TrainConfig:
     overrides = json.loads(path.read_text())
     d = asdict(cfg)
     d.update(overrides)
-    for key in ("duckdb_path", "model_output_path"):
+    for key in ("duckdb_path", "model_uncalibrated_path", "model_calibrated_path"):
         val = d.get(key)
         if val is not None and not isinstance(val, Path):
             d[key] = Path(val)
@@ -171,7 +181,7 @@ def load_test_holdout(cfg: TrainConfig) -> tuple[pd.DataFrame, pd.Series]:
     return X_test, y_test
 
 
-def train(cfg: TrainConfig) -> Pipeline:
+def train(cfg: TrainConfig) -> tuple[Pipeline, CalibratedClassifierCV]:
     X, y = _load_feature_xy(cfg)
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
@@ -184,17 +194,25 @@ def train(cfg: TrainConfig) -> Pipeline:
         stratify=y,
     )
 
+    X_tree, X_cal, y_tree, y_cal = train_test_split(
+        X_temp,
+        y_temp,
+        test_size=cfg.calibration_holdout_frac,
+        random_state=cfg.random_state,
+        stratify=y_temp,
+    )
+
     X_val, y_val = None, None
     if cfg.early_stopping_rounds is not None:
         X_train, X_val, y_train, y_val = train_test_split(
-            X_temp,
-            y_temp,
+            X_tree,
+            y_tree,
             test_size=cfg.validation_size,
             random_state=cfg.random_state,
-            stratify=y_temp,
+            stratify=y_tree,
         )
     else:
-        X_train, y_train = X_temp, y_temp
+        X_train, y_train = X_tree, y_tree
 
     numeric_pipe = Pipeline(
         steps=[("imputer", SimpleImputer(strategy=cfg.numeric_imputer_strategy))]
@@ -242,8 +260,9 @@ def train(cfg: TrainConfig) -> Pipeline:
     pipeline = Pipeline([("preprocess", preprocess), ("clf", clf)])
 
     logger.info(
-        "Training: n_train=%s n_val=%s n_test=%s n_features=%s",
+        "Training: n_train=%s n_cal=%s n_val=%s n_test=%s n_features=%s",
         len(X_train),
+        len(X_cal),
         len(X_val) if X_val is not None else 0,
         len(X_test),
         X.shape[1],
@@ -268,9 +287,21 @@ def train(cfg: TrainConfig) -> Pipeline:
             verbose=False,
         )
 
+    cal_model = CalibratedClassifierCV(
+        estimator=FrozenEstimator(pipeline),
+        method="isotonic",
+        cv=3,
+    )
+    cal_model.fit(X_cal, y_cal)
+
     y_score = pipeline.predict_proba(X_test)[:, 1]
     y_pred = pipeline.predict(X_test)
     test_metrics = binary_classifier_metrics(y_test, y_score, y_pred=y_pred)
+
+    p_cal = cal_model.predict_proba(X_test)[:, 1]
+    test_metrics_cal = binary_classifier_metrics(y_test, p_cal)
+    test_metrics["test_brier_raw"] = brier_score_loss(y_test, y_score)
+    test_metrics["test_brier_calibrated"] = brier_score_loss(y_test, p_cal)
 
     mlflow_params: dict = {}
     for k, v in asdict(cfg).items():
@@ -282,11 +313,13 @@ def train(cfg: TrainConfig) -> Pipeline:
         {
             "scale_pos_weight": scale_pos_weight,
             "n_train": len(X_train),
+            "n_cal": len(X_cal),
             "n_val": len(X_val) if X_val is not None else 0,
             "n_test": len(X_test),
             "n_features": int(X.shape[1]),
             "n_numeric_cols": len(num_cols),
             "n_categorical_cols": len(cat_cols),
+            "calibration_holdout_frac": cfg.calibration_holdout_frac,
         }
     )
     try:
@@ -302,12 +335,21 @@ def train(cfg: TrainConfig) -> Pipeline:
         pass
 
     n_sig = min(cfg.signature_sample_rows, len(X_test))
-    mlflow_run_id, mlflow_run_name = log_pipeline_run(
+    sig_rows = X_test.iloc[:n_sig]
+    metrics_for_mlflow = {
+        **test_metrics,
+        **{f"cal_{k}": v for k, v in test_metrics_cal.items()},
+    }
+    mlflow_run_id, mlflow_run_name = log_credit_train_run(
         cfg.run_name,
-        pipeline,
-        metrics=test_metrics,
+        pipeline_uncalibrated=pipeline,
+        model_calibrated=cal_model,
+        metrics=metrics_for_mlflow,
         params=mlflow_params,
-        signature_sample=X_test.iloc[:n_sig],
+        signature_sample=sig_rows,
+        y_test=y_test,
+        p_test_raw=y_score,
+        p_test_calibrated=p_cal,
         experiment_name=cfg.experiment_name,
     )
     print(
@@ -315,15 +357,24 @@ def train(cfg: TrainConfig) -> Pipeline:
         flush=True,
     )
 
-    logger.info("Test metrics:\n%s", format_metrics_lines(test_metrics))
+    logger.info("Test metrics (uncalibrated):\n%s", format_metrics_lines(test_metrics))
+    logger.info(
+        "Test metrics (calibrated proba):\n%s",
+        format_metrics_lines(test_metrics_cal),
+    )
 
-    if cfg.model_output_path is not None:
-        out = Path(cfg.model_output_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(pipeline, out)
-        logger.info("Saved pipeline to %s", out.resolve())
+    if cfg.model_uncalibrated_path is not None:
+        out_u = Path(cfg.model_uncalibrated_path)
+        out_u.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(pipeline, out_u)
+        logger.info("Saved uncalibrated pipeline to %s", out_u.resolve())
+    if cfg.model_calibrated_path is not None:
+        out_c = Path(cfg.model_calibrated_path)
+        out_c.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(cal_model, out_c)
+        logger.info("Saved calibrated model to %s", out_c.resolve())
 
-    return pipeline
+    return pipeline, cal_model
 
 
 def main() -> int:
