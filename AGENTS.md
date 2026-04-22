@@ -27,7 +27,7 @@ Layout follows a phased build. Some paths are **planned** (from the project road
 | `sql/features/` | SQL that aggregates supplementary tables to **one row per applicant** for modelling. |
 | `notebooks/` | Story-driven notebooks: EDA (`01_eda.ipynb`), modelling (`02_modelling.ipynb`), and later calibration / survival. |
 | `src/` | Shared Python: feature helpers, metrics, MLflow utilities, and (later) training and API code. |
-| `model/` | Saved trained pipelines (e.g. `pipeline.pkl`) when you export models. |
+| `model/` | Saved artefacts from `src.train` (`model_uncalibrated.pkl`, `model_calibrated.pkl`). |
 | `mlflow.db` | MLflow **tracking** metadata (SQLite). |
 | `mlruns/` | MLflow **artifact** root for logged models and files (may be gitignored — follow project `.gitignore`). |
 
