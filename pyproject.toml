@@ -1,7 +1,7 @@
 [project]
 name = "credit-risk-ml"
 version = "0.1.0"
-description = "Add your description here"
+description = "Credit default probability modelling on the Home Credit dataset — EDA, XGBoost pipeline, calibration, survival analysis."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
