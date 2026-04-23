@@ -76,10 +76,10 @@ class TrainConfig:
     rebuild_features: bool = False
     sample_frac: float | None = None
     test_size: float = 0.2
-    validation_size: float = 0.15
+    validation_size: float = 0.1
     #: Stratified fraction of the non-test pool reserved for isotonic calibration only
     #: (not used to fit the booster).
-    calibration_holdout_frac: float = 0.15
+    calibration_holdout_frac: float = 0.1
 
     numeric_imputer_strategy: str = "median"
     categorical_imputer_strategy: str = "most_frequent"

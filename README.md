@@ -58,15 +58,15 @@ The **production training run** — tuned XGBoost with `n_estimators=2000, max_d
 
 _Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from_mlflow.py`_
 
-**MLflow run** `c6598c78fb0b46e18bbfb8707f0c5508` — **xgb_2000_depth4_sub075_lambda2**
+**MLflow run** `0c13f97febe74095af4a28fe7e742084` — **xgb_2000_depth4_sub075_lambda2**
 
 | Metric | Test |
 | --- | --- |
-| ROC-AUC | 0.7898 |
-| Gini (2×AUC − 1) | 0.5796 |
-| Average precision (PR-AUC) | 0.2904 |
-| KS statistic | 0.4418 |
-| Accuracy | 0.7483 |
+| ROC-AUC | 0.7907 |
+| Gini (2×AUC − 1) | 0.5814 |
+| Average precision (PR-AUC) | 0.2911 |
+| KS statistic | 0.4461 |
+| Accuracy | 0.7484 |
 
 ![ROC and precision–recall (test holdout, same split as training)](docs/figures/mlflow_eval_curves.png)
 
@@ -84,14 +84,14 @@ For credit and capital use cases, **calibrated probabilities** matter: a reporte
 
 _Auto-generated from MLflow — same command as the Modelling block._
 
-**MLflow run** `c6598c78fb0b46e18bbfb8707f0c5508` — **xgb_2000_depth4_sub075_lambda2** (isotonic `CalibratedClassifierCV` on a stratified row holdout before booster fit; `calibration_holdout_frac=0.15`).
+**MLflow run** `0c13f97febe74095af4a28fe7e742084` — **xgb_2000_depth4_sub075_lambda2** (isotonic `CalibratedClassifierCV` on a stratified row holdout before booster fit; `calibration_holdout_frac=0.1`).
 
 | Metric | Test holdout |
 | --- | --- |
-| Brier score (uncalibrated) | 0.1709 |
-| Brier score (isotonic calibrated) | 0.0655 |
-| ROC-AUC (uncalibrated) | 0.7898 |
-| ROC-AUC (calibrated proba) | 0.7891 |
+| Brier score (uncalibrated) | 0.1715 |
+| Brier score (isotonic calibrated) | 0.0654 |
+| ROC-AUC (uncalibrated) | 0.7907 |
+| ROC-AUC (calibrated proba) | 0.7901 |
 
 ![Reliability diagram — mean predicted vs observed default rate (test holdout)](docs/figures/reliability_raw_vs_calibrated.png)
 
