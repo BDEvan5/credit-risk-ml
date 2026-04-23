@@ -156,13 +156,6 @@ def _load_feature_xy(cfg: TrainConfig) -> tuple[pd.DataFrame, pd.Series]:
             f"Expected columns {cfg.target_col!r} and {cfg.id_col!r} in feature frame."
         )
 
-    X = df.drop(columns=[cfg.target_col, cfg.id_col])
-    # Coerce pandas extension-array dtypes (Int64, boolean, etc.) to numpy types
-    # so that pd.NA becomes np.nan and sklearn imputers work correctly.
-    X = X.where(X.notna(), np.nan)
-    for col in X.select_dtypes(include="number").columns:
-        if pd.api.types.is_extension_array_dtype(X[col].dtype):
-            X[col] = X[col].astype("float64")
     X = _sklearn_safe_features(df.drop(columns=[cfg.target_col, cfg.id_col]))
     y = df[cfg.target_col]
     return X, y
