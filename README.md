@@ -1,26 +1,58 @@
 # Credit risk ML 💳
 
-## Intro
+**End-to-end probability-of-default modelling on the [Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/data) dataset — from SQL feature engineering through a calibrated XGBoost pipeline, SHAP explainability, and survival analysis of time-to-delinquency.**
 
-The aim of this project is to **model the probability of loan default** using application and bureau data, then **compare alternative feature sets and modeling choices** (e.g. baselines vs richer pipelines, validation discipline) so decisions are evidence-based. Longer term, the intent is to **move from experiments toward a production-grade pipeline**: reproducible data loading, feature builds, training/evaluation, and deployment hooks.
+The project is organised as five linked notebooks that together cover the lifecycle of a credit risk model: data understanding, modelling, probability calibration, model explanation, and time-to-event analysis. Training is fully scripted (`src/train.py`) and every run is tracked in MLflow so the numbers in this README regenerate from a single command.
 
-**Getting started with the data:** Download the [Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/data) competition files from Kaggle and place the CSVs under **`data/`**. Run **`sql/load.sql`** against DuckDB to create tables (e.g. `application_train`, `bureau`, …) and materialize **`data/home_credit.db`**. After that you can run SQL under `sql/eda/` or open the EDA notebook, which reads the same database.
+---
 
-## EDA 📊
+## Headline results
 
-Exploratory analysis asks how strong applicants’ characteristics are related to **`TARGET`** (default vs not). See the notebook **[`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb)** for plots and tables (DuckDB → `data/home_credit.db`, queries from `sql/eda/`).
+| Metric (test holdout) | Uncalibrated | Isotonic calibrated |
+| --- | --- | --- |
+| **ROC-AUC** | **0.7898** | 0.7891 |
+| **Gini** (2·AUC − 1) | **0.5796** | — |
+| PR-AUC (avg. precision) | 0.2904 | — |
+| KS statistic | 0.4418 | — |
+| Brier score | 0.1709 | **0.0655** |
 
-- **Occupation and concentration** — Occupation is a strong predictor of default rate and a simple feature to use with 12 unique values.
-- **Payment burden (annuity / income)** — Higher payment burdens lead to higher default rates. Individuals in the lower median of payment burden are less likely to default. The single exception is the 10th decile, where a significant drop is seen from the 9th decile.
-- **Income × credit (leverage)** — The safest applicants tend to be on the edges of the credit amount distributions, with the highest risk applicants in the middle. Additionally, the lower the income, the larger the risk-band and the higher the default rate.
-- **Bureau depth, thin files, external scores** — More information about applications leads to significantly better predictions. Applicants with no bureau history, or very few lines on record, are more likely to default. Additionally, the available external signals provide signal on default rate.
-- **Age bands** — Older applicants are monotonically safer and less likely to default. The high-risk segment is concentrated among younger applicants.
+- **Gradient boosting beats a tuned linear baseline by ~1.5 pp AUC** (logistic regression 0.774 → XGBoost 0.789 in the exploration notebook; 0.7898 in the tuned `src/train.py` run).
+- **Isotonic calibration cuts Brier score by 62%** (0.17 → 0.07) with negligible AUC cost, making the output suitable for threshold-based policy decisions, not just ranking.
+- **5-fold stratified CV** confirms XGBoost and LightGBM are statistically tied at this feature set (AUC 0.786 ± 0.004 for both), so the choice of champion is driven by tooling and calibration support rather than accuracy.
 
-Index of EDA query files and what each returns: **[`sql/eda/README.md`](sql/eda/README.md)**.
+---
+
+## What the project covers
+
+| # | Notebook | Focus | Techniques |
+| --- | --- | --- | --- |
+| 1 | [`01_eda.ipynb`](notebooks/01_eda.ipynb) | **Exploratory analysis** across five business questions | Wilson CIs, concentration (Lorenz-style) curves, heatmaps, stratified defaults |
+| 2 | [`02_modelling.ipynb`](notebooks/02_modelling.ipynb) | **Benchmark + production modelling** | sklearn `Pipeline` + `ColumnTransformer`, logistic / XGBoost / LightGBM, stratified K-fold CV, MLflow logging |
+| 3 | [`03_calibration.ipynb`](notebooks/03_calibration.ipynb) | **Probability calibration for policy use** | Reliability diagrams, Platt vs isotonic, Brier, ECE, cost-based thresholding, fairness (AUC by occupation) |
+| 4 | [`04_explainability.ipynb`](notebooks/04_explainability.ipynb) | **Global and local model explanation** | SHAP `TreeExplainer`, beeswarm and waterfall plots |
+| 5 | [`05_survival.ipynb`](notebooks/05_survival.ipynb) | **Time-to-delinquency modelling** | Kaplan–Meier by risk quartile, multivariate log-rank, Cox PH with Schoenfeld-residual proportional-hazards checks |
+
+Feature engineering lives in **`sql/features/`** (seven files aggregating the full Home Credit schema: application, bureau, bureau balance, credit card balance, POS/cash balance, previous applications, instalments). The EDA layer lives in **`sql/eda/`** (16 parameterised queries — index at [`sql/eda/README.md`](sql/eda/README.md)). The Python package in **`src/`** exposes `build_feature_matrix`, a metrics module (Gini / KS / PR-AUC alongside ROC-AUC), and MLflow helpers.
+
+---
+
+## EDA highlights
+
+Each section in [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) asks one business question, plots against a portfolio-baseline default rate of **8.1%**, and reports quantified findings:
+
+- **Occupation.** Default risk spans **~3.5×** — Low-skill Laborers default at **17.2%** vs Accountants at **4.8%**. The four riskiest roles are ~9% of applicants but ~13% of defaults (concentration curve).
+- **Payment burden** (annuity / income). Default rises from **7.05%** (decile 1) to **8.86%** (decile 8) — only a ~1.8 pp swing, with a notable reversal at decile 10. Signal is real but weak standalone.
+- **Income × credit (leverage).** Default rate grid ranges from **4.5%** (high income × large credit) to **11.9%** (low income × low credit) — a ~2.6× spread, with low-income rows above baseline across almost every credit decile.
+- **Bureau depth and external scores.** Thin-file applicants default at **10.1%** vs **7.7%** for those with history. Normalised `EXT_SOURCE_*` scores are the single strongest signal — defaulters average **0.39–0.41** vs **0.51–0.52** (~0.11 gap on a 0–1 scale).
+- **Age.** Monotonic — default falls from **12.3%** for under-25s to **4.9%** for 60+ (~2.5× spread). Every band above 40 sits below baseline.
+
+---
 
 ## Modelling
 
-Notebook **[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb)** compares logistic regression, XGBoost, and LightGBM on one feature set (MLflow experiment `credit-risk-modelling`). Scripted training and the same metrics live in **`src/train.py`** (`uv run python -m src.train`).
+[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb) benchmarks **logistic regression**, **XGBoost**, and **LightGBM** on one feature set (MLflow experiment `credit-risk-modelling`), runs 5-fold stratified CV on the two gradient-boosted models, and produces a side-by-side comparison table. Logistic regression is dropped from the CV (too slow under dense one-hot encoding and already ~1.5 pp AUC behind the tree models) after the single-holdout comparison.
+
+The **production training run** — tuned XGBoost with `n_estimators=2000, max_depth=4, learning_rate=0.02, reg_lambda=2.0, subsample=0.75` — lives in `src/train.py` and is what the metrics below refer to.
 
 <!-- MLFLOW_README_SYNC_BEGIN -->
 
@@ -40,9 +72,13 @@ _Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from
 
 <!-- MLFLOW_README_SYNC_END -->
 
+---
+
 ## Calibration and explainability
 
-For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similar scored accounts (after binning), not merely rank applicants. **[`notebooks/03_calibration.ipynb`](notebooks/03_calibration.ipynb)** compares calibration methods (reliability diagrams, **Platt** and **isotonic** `CalibratedClassifierCV`, Brier, **ECE**, business-cost thresholding). **[`notebooks/04_explainability.ipynb`](notebooks/04_explainability.ipynb)** has **SHAP** global and local plots.
+For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similarly scored accounts, not merely rank applicants. [`notebooks/03_calibration.ipynb`](notebooks/03_calibration.ipynb) compares **Platt** and **isotonic** `CalibratedClassifierCV`, reports Brier score and expected calibration error (ECE), ties thresholds to a simple **business-cost** matrix, and includes a fairness check (AUC by occupation).
+
+[`notebooks/04_explainability.ipynb`](notebooks/04_explainability.ipynb) uses SHAP `TreeExplainer` on the preprocessed matrix for global beeswarm plots and per-applicant waterfall explanations.
 
 <!-- MLFLOW_CALIB_README_SYNC_BEGIN -->
 
@@ -61,30 +97,71 @@ _Auto-generated from MLflow — same command as the Modelling block._
 
 <!-- MLFLOW_CALIB_README_SYNC_END -->
 
-Training (`uv run python -m src.train`) writes **`model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and **`model/model_calibrated.pkl`** (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus a raw-vs-calibrated reliability figure to MLflow.
+Training (`uv run python -m src.train`) writes **`model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and **`model/model_calibrated.pkl`** (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus the raw-vs-calibrated reliability figure to MLflow.
+
+---
+
+## Survival analysis
+
+[`notebooks/05_survival.ipynb`](notebooks/05_survival.ipynb) reframes the problem as **time to serious delinquency** (60-days-late threshold on instalment payments). It builds duration / event labels from `installments_payments`, fits **Kaplan–Meier** curves stratified by XGBoost risk quartile, runs a **multivariate log-rank** test of equality, and fits a **Cox proportional-hazards** model with Schoenfeld-residual checks. The closing section contrasts the binary (origination decision) and survival (servicing / EWI) framings and when each is the right tool.
+
+---
+
+## Quick start
+
+```bash
+# 1. Download Home Credit CSVs from Kaggle into ./data/
+# 2. Build the DuckDB database (tables: application_train, bureau, bureau_balance, …)
+uv run duckdb data/home_credit.db < sql/load.sql
+
+# 3. Train the XGBoost pipeline + calibrator, log to MLflow
+uv run python -m src.train
+
+# 4. Open any of the five notebooks
+uv run jupyter lab notebooks/
+```
+
+MLflow UI (experiments, metrics, artefacts, signatures):
+```bash
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+Refresh the Modelling and Calibration blocks in this README (metrics tables + figures) from MLflow:
+```bash
+uv run python scripts/sync_readme_from_mlflow.py --run-id <MLFLOW_RUN_ID>
+```
+The script updates `docs/figures/mlflow_eval_curves.png`, `docs/figures/reliability_raw_vs_calibrated.png`, and the two marked `MLFLOW_*_SYNC` blocks in place.
+
+---
+
+## Repository layout
+
+```
+credit-risk-ml/
+├── notebooks/         # 01_eda, 02_modelling, 03_calibration, 04_explainability, 05_survival
+├── sql/
+│   ├── load.sql       # CSV → DuckDB loader
+│   ├── eda/           # 16 parameterised EDA queries (indexed in eda/README.md)
+│   └── features/      # 7 feature-engineering queries, one per source table
+├── src/
+│   ├── features.py    # build_feature_matrix() — full join + aggregation pipeline
+│   ├── train.py       # XGBoost pipeline, isotonic calibration, MLflow logging
+│   ├── metrics.py     # ROC-AUC, Gini, KS, PR-AUC, ROC/PR plot helpers
+│   └── mlflow_helpers.py
+├── docs/figures/      # Figures embedded in this README (MLflow-synced)
+├── model/             # Trained artefacts (gitignored)
+└── mlflow.db          # SQLite MLflow backend
+```
+
+---
 
 ## Future work 🔮
 
-- Deploy the model to a web service to enable real-time scoring.
+- **Deployed scoring service with an explainable front-end.** Wrap `model_calibrated.pkl` in a FastAPI endpoint behind a small web UI where a user can enter applicant details, receive a calibrated probability of default and a readable credit-report summary, and inspect a **SHAP waterfall** that surfaces the largest positive and negative factors driving the score. The groundwork (calibrated pipeline, SHAP `TreeExplainer`, feature schema) already exists in the repo — the remaining work is the API layer, request validation over the ~20 top-SHAP features, and the front-end.
+- **Known limitations.** The current evaluation is a stratified row split rather than a time-based holdout, so calibration stability over time is untested; the model is trained only on approved applicants and inherits that selection bias; and there is no drift monitoring or champion-challenger tooling around the trained artefact. These are the next tranche of work once the deployed endpoint is in place.
 
+---
 
-## Commands to run the project
+## Stack
 
-Run **`mlflow`** locally to view experiments: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
-
-### Training and README metrics
-
-From the **repository root**, with **`data/home_credit.db`** in place, train the XGBoost pipeline and log a run to **`mlflow.db`** (the script prints the MLflow run id when finished):
-
-```bash
-uv run python -m src.train
-```
-This script internally calls the `build_feature_matrix` function to build the feature matrix and then trains the model.
-
-To **refresh the Modelling and Calibration sections** in this README (metrics tables, ROC/PR figure, Brier/AUC table, reliability diagram) from MLflow, run the sync script. It uses the run id configured in the script unless you override it with `--run-id`:
-
-```bash
-uv run python scripts/sync_readme_from_mlflow.py --run-id c6598c78fb0b46e18bbfb8707f0c5508
-```
-
-The script updates `docs/figures/mlflow_eval_curves.png`, `docs/figures/reliability_raw_vs_calibrated.png`, and the two marked README blocks.
+Python 3.12 · uv · DuckDB · pandas · scikit-learn · XGBoost · LightGBM · SHAP · lifelines · MLflow (SQLite backend) · matplotlib.
