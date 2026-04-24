@@ -8,6 +8,9 @@
 #
 # API URL/key: use Repository Variables (Settings → Secrets and variables → Actions → Variables), OR
 # use Repository Secrets with the same names — this workflow passes vars first, then secrets.
+#
+# Node 24: opt in so JavaScript-based actions (checkout, setup-node, deploy-pages, etc.) use Node 24
+# on the runner before GitHub makes it the default (see GitHub Actions Node 20 deprecation changelog).
 
 name: Deploy to GitHub Pages
 
@@ -16,6 +19,9 @@ on:
     branches:
       - master
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -30,7 +36,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Print CI context (no secret values)
         shell: bash
@@ -53,9 +59,9 @@ jobs:
             echo "PUBLIC_API_KEY is set (length ${#PUBLIC_API_KEY})"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
