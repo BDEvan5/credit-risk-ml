@@ -1,0 +1,75 @@
+:root {
+	--surface: #0a111a;
+	--surface-container: #0f1724;
+	--surface-container-high: #1b2b3b;
+	--surface-container-highest: #263646;
+	--on-surface: #d3e4f9;
+	--on-surface-variant: #d4c5ab;
+	--primary: #ffc107;
+	--on-primary: #3f2e00;
+	--primary-container: #ffc107;
+	--outline: #9c8f78;
+	--outline-focus: #fabd00;
+	--input-bg: #0a141d;
+	--input-border: #142333;
+	--tertiary: #d9e8fe;
+	--risk-low: #5ee9b5;
+	--risk-low-bg: rgba(94, 233, 181, 0.12);
+	--risk-medium: #fabd00;
+	--risk-medium-bg: rgba(250, 189, 0, 0.14);
+	--risk-high: #ff6b6b;
+	--risk-high-bg: rgba(255, 107, 107, 0.14);
+	--radius-card: 2rem;
+	--radius-control: 9999px;
+	--space-xs: 4px;
+	--space-sm: 12px;
+	--space-md: 24px;
+	--space-lg: 40px;
+	--max-width: 1200px;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	font-family: 'Work Sans', system-ui, sans-serif;
+	font-size: 16px;
+	line-height: 1.6;
+	background: var(--surface);
+	color: var(--on-surface);
+	-webkit-font-smoothing: antialiased;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+	font-family: Manrope, system-ui, sans-serif;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+	margin: 0 0 var(--space-sm);
+}
+
+h1 {
+	font-size: clamp(1.75rem, 4vw, 2rem);
+}
+
+h2 {
+	font-size: 1.25rem;
+}
+
+a {
+	color: var(--tertiary);
+}
+
+a:hover {
+	text-decoration: underline;
+}

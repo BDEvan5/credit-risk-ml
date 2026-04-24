@@ -9,7 +9,8 @@ __pycache__/
 data/*
 PLAN.md
 # temporary model folder
-model/* 
+model/*
+!model/model_calibrated.pkl
 
 # Distribution / packaging
 .Python

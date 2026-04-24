@@ -4,17 +4,29 @@ version = "0.1.0"
 description = "Credit default probability modelling on the Home Credit dataset — EDA, XGBoost pipeline, calibration, survival analysis."
 readme = "README.md"
 requires-python = ">=3.12"
+# Runtime dependencies: what src/api.py and the pickled model need to run in
+# production. Keep this list tight — it drives the Docker image size on Cloud Run.
 dependencies = [
+    "scikit-learn>=1.5.0",
+    "pandas>=2.2.0,<3",
+    "xgboost>=2.1.0",
+    "joblib>=1.5.3",
+    "fastapi>=0.135.3",
+    "uvicorn[standard]>=0.44.0",
+    "pydantic>=2.12.5",
+]
+
+# Training / notebook / experimentation deps. Installed in local dev by default
+# (uv sync), excluded from the production container via `uv sync --no-dev`.
+[dependency-groups]
+dev = [
     "mlflow>=2.19.0",
     "lightgbm>=4.5.0",
-    "scikit-learn>=1.5.0",
     "matplotlib>=3.10.0",
     "pyarrow>=14.0.1",
     "duckdb>=1.5.1",
     "ipykernel>=7.2.0",
     "kaggle>=2.0.0",
-    "pandas>=2.2.0,<3",
-    "xgboost>=2.1.0",
     "shap>=0.51.0",
     "lifelines>=0.30.3",
 ]
