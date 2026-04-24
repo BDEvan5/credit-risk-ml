@@ -31,9 +31,10 @@ WORKDIR /app
 # --frozen: fail if uv.lock is out of sync with pyproject.toml (guarantees reproducibility).
 # --no-dev: skip [dependency-groups.dev] (the training stack).
 # --no-install-project: we don't need the project itself installed; uvicorn finds src/ via CWD.
+# NB: no BuildKit `--mount=type=cache` — Cloud Build's default docker builder doesn't
+# enable BuildKit, so cache mounts fail the build there. uv resolves fast enough without.
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Application code and the pickled calibrated model.
 COPY src/api.py ./src/api.py

@@ -1,0 +1,51 @@
+# Keep the build context (and final image) small and free of secrets.
+# Only requirements-api.txt, src/api.py, and model/model_calibrated.pkl are needed.
+
+# Version control
+.git
+.gitignore
+.github
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Virtual envs (uv / venv / poetry)
+.venv
+venv
+.env
+.envrc
+
+# IDE / editor
+.idea
+.vscode
+*.swp
+
+# Data / experiment artefacts — big and not needed at inference time
+data
+mlruns
+mlflow.db
+*.duckdb
+*.db
+notebooks
+docs
+scripts
+sql
+run.log
+# NB: uv.lock is intentionally NOT ignored — the Dockerfile uses
+# `uv sync --frozen` against it for reproducible dep resolution.
+
+# Everything under model/ except the calibrated model explicitly copied in Dockerfile
+model/model_uncalibrated.pkl
+
+# Other unused source files (only src/api.py is COPYed by the Dockerfile)
+src/train.py
+src/features.py
+src/metrics.py
+src/mlflow_helpers.py
+src/__pycache__

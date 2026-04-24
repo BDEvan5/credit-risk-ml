@@ -9,7 +9,6 @@ __pycache__/
 data/*
 PLAN.md
 # temporary model folder
-model/* 
 
 # Distribution / packaging
 .Python
