@@ -4,6 +4,8 @@
 
 The project is organised as five linked notebooks that together cover the lifecycle of a credit risk model: data understanding, modelling, probability calibration, model explanation, and time-to-event analysis. Training is fully scripted (`src/train.py`) and every run is tracked in MLflow so the numbers in this README regenerate from a single command.
 
+**Live demo:** [**RiskSense — credit risk UI**](https://bdevan5.github.io/credit-risk-ml/) — interactive SvelteKit app on **GitHub Pages** that calls the calibrated **`/predict`** API on **Google Cloud Run**. Ensure Cloud Run’s `ALLOWED_ORIGINS` includes `https://bdevan5.github.io` (see [Scoring API](#scoring-api)).
+
 ---
 
 ## Headline results
@@ -151,6 +153,8 @@ The script updates `docs/figures/mlflow_eval_curves.png`, `docs/figures/reliabil
 
 **Live endpoint:** `https://credit-risk-api-679457675772.europe-west2.run.app`
 
+**End-to-end deployment:** the **API** runs on **Google Cloud Run** (`gcloud run deploy` from this repo). The **RiskSense** web UI under `frontend/` is built and published to **GitHub Pages** by **GitHub Actions** on every push to `master` ([`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)). In the repo’s **Settings → Secrets and variables → Actions → Variables**, set `PUBLIC_API_URL` and `PUBLIC_API_KEY` so the Pages build can embed the live Cloud Run URL and key (same pattern as local `.env`; see also [`scripts/deployment.md`](scripts/deployment.md)).
+
 ### Deploy from a fresh clone
 
 ```bash
@@ -207,6 +211,8 @@ Response fields: `probability` (calibrated, in [0, 1]), `risk_tier` (Low/Medium/
 
 ```
 credit-risk-ml/
+├── .github/workflows/     # e.g. deploy-pages.yml — GitHub Pages CI for frontend/
+├── frontend/              # SvelteKit UI (GitHub Pages) → Cloud Run /predict
 ├── notebooks/             # 01_eda, 02_modelling, 03_calibration, 04_explainability, 05_survival
 ├── sql/
 │   ├── load.sql           # CSV → DuckDB loader
@@ -229,11 +235,19 @@ credit-risk-ml/
 
 ## Future work 🔮
 
-- **Explainable front-end over the deployed API.** The FastAPI + Cloud Run service is live (see [Scoring API](#scoring-api)); the remaining work is a small SvelteKit/GitHub Pages UI where a user can enter applicant details, receive the calibrated probability, and inspect a **SHAP waterfall** that surfaces the largest positive and negative factors driving the score. The groundwork (calibrated pipeline, SHAP `TreeExplainer`, `/predict` endpoint) is all in place — remaining work is the front-end plus a `/explain` endpoint that returns SHAP values per request.
-- **Known limitations.** The current evaluation is a stratified row split rather than a time-based holdout, so calibration stability over time is untested; the model is trained only on approved applicants and inherits that selection bias; and there is no drift monitoring or champion-challenger tooling around the trained artefact. These are the next tranche of work once the deployed endpoint is in place.
+- **Richer explanations in the UI.** The [live demo](https://bdevan5.github.io/credit-risk-ml/) already surfaces calibrated probability and risk tier from Cloud Run; next steps include a **SHAP waterfall** (or similar) driven by a dedicated **`/explain`** endpoint and per-request feature attributions.
+- **Known limitations.** The current evaluation is a stratified row split rather than a time-based holdout, so calibration stability over time is untested; the model is trained only on approved applicants and inherits that selection bias; and there is no drift monitoring or champion-challenger tooling around the trained artefact.
+
+---
+
+## Live demo (screenshot)
+
+The RiskSense UI on GitHub Pages: application intake, scores from the Cloud Run API, and browser-local simulation history.
+
+![RiskSense credit risk demo — application information and calculated risk profile](docs/figures/website_image.png)
 
 ---
 
 ## Stack
 
-Python 3.12 · uv · DuckDB · pandas · scikit-learn · XGBoost · LightGBM · SHAP · lifelines · MLflow (SQLite backend) · matplotlib · FastAPI · Docker · Google Cloud Run.
+Python 3.12 · uv · DuckDB · pandas · scikit-learn · XGBoost · LightGBM · SHAP · lifelines · MLflow (SQLite backend) · matplotlib · FastAPI · Docker · **Google Cloud Run** · SvelteKit · **GitHub Actions** · **GitHub Pages**.
