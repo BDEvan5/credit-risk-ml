@@ -1,8 +1,8 @@
 # Credit risk ML 💳
 
-**End-to-end probability-of-default modelling on the [Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/data) dataset — from SQL feature engineering through a calibrated XGBoost pipeline, SHAP explainability, and survival analysis of time-to-delinquency.**
+**End-to-end probability-of-default modelling on the [Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/data) dataset — from SQL feature engineering through a calibrated XGBoost pipeline, SHAP explainability, and survival analysis of time-to-delinquency, served as a FastAPI endpoint on Google Cloud Run.**
 
-The project is organised as five linked notebooks that together cover the lifecycle of a credit risk model: data understanding, modelling, probability calibration, model explanation, and time-to-event analysis. Training is fully scripted (`src/train.py`) and every run is tracked in MLflow so the numbers in this README regenerate from a single command.
+The project is organised as five linked notebooks covering the full lifecycle of a credit risk model: data understanding, modelling, probability calibration, model explanation, and time-to-event analysis. Training is fully scripted (`src/train.py`) and every run is tracked in MLflow so the numbers in this README regenerate from a single command. The emphasis throughout is on the details that matter for a real credit decisioning workflow — calibrated probabilities suitable for threshold-based policy, per-applicant explanations, and fairness / subgroup checks — rather than pure leaderboard AUC.
 
 **Live demo:** [**RiskSense — credit risk UI**](https://bdevan5.github.io/credit-risk-ml/) — interactive SvelteKit app on **GitHub Pages** that calls the calibrated **`/predict`** API on **Google Cloud Run**. Ensure Cloud Run’s `ALLOWED_ORIGINS` includes `https://bdevan5.github.io` (see [Scoring API](#scoring-api)).
 
@@ -31,20 +31,20 @@ The project is organised as five linked notebooks that together cover the lifecy
 
 | #   | Notebook                                                       | Focus                                                   | Techniques                                                                                                        |
 | --- | -------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 1   | `[01_eda.ipynb](notebooks/01_eda.ipynb)`                       | **Exploratory analysis** across five business questions | Wilson CIs, concentration (Lorenz-style) curves, heatmaps, stratified defaults                                    |
-| 2   | `[02_modelling.ipynb](notebooks/02_modelling.ipynb)`           | **Benchmark + production modelling**                    | sklearn `Pipeline` + `ColumnTransformer`, logistic / XGBoost / LightGBM, stratified K-fold CV, MLflow logging     |
-| 3   | `[03_calibration.ipynb](notebooks/03_calibration.ipynb)`       | **Probability calibration for policy use**              | Reliability diagrams, Platt vs isotonic, Brier, ECE, cost-based thresholding, fairness (AUC by occupation)        |
-| 4   | `[04_explainability.ipynb](notebooks/04_explainability.ipynb)` | **Global and local model explanation**                  | SHAP `TreeExplainer`, beeswarm and waterfall plots                                                                |
-| 5   | `[05_survival.ipynb](notebooks/05_survival.ipynb)`             | **Time-to-delinquency modelling**                       | Kaplan–Meier by risk quartile, multivariate log-rank, Cox PH with Schoenfeld-residual proportional-hazards checks |
+| 1   | [`01_eda.ipynb`](notebooks/01_eda.ipynb)                       | **Exploratory analysis** across five business questions | Wilson CIs, concentration (Lorenz-style) curves, heatmaps, stratified defaults                                    |
+| 2   | [`02_modelling.ipynb`](notebooks/02_modelling.ipynb)           | **Benchmark + production modelling**                    | sklearn `Pipeline` + `ColumnTransformer`, logistic / XGBoost / LightGBM, stratified K-fold CV, MLflow logging     |
+| 3   | [`03_calibration.ipynb`](notebooks/03_calibration.ipynb)       | **Probability calibration for policy use**              | Reliability diagrams, Platt vs isotonic, Brier, ECE, cost-based thresholding, fairness (AUC by occupation)        |
+| 4   | [`04_explainability.ipynb`](notebooks/04_explainability.ipynb) | **Global and local model explanation**                  | SHAP `TreeExplainer`, beeswarm and waterfall plots                                                                |
+| 5   | [`05_survival.ipynb`](notebooks/05_survival.ipynb)             | **Time-to-delinquency modelling**                       | Kaplan–Meier by risk quartile, multivariate log-rank, Cox PH with Schoenfeld-residual proportional-hazards checks |
 
 
-Feature engineering lives in `**sql/features/`** (seven files aggregating the full Home Credit schema: application, bureau, bureau balance, credit card balance, POS/cash balance, previous applications, instalments). The EDA layer lives in `**sql/eda/**` (16 parameterised queries — index at `[sql/eda/README.md](sql/eda/README.md)`). The Python package in `**src/**` exposes `build_feature_matrix`, a metrics module (Gini / KS / PR-AUC alongside ROC-AUC), and MLflow helpers.
+Feature engineering lives in **`sql/features/`** (seven files aggregating the full Home Credit schema: application, bureau, bureau balance, credit card balance, POS/cash balance, previous applications, instalments). The EDA layer lives in **`sql/eda/`** (16 parameterised queries — index at [`sql/eda/README.md`](sql/eda/README.md)). The Python package in **`src/`** exposes `build_feature_matrix`, a metrics module (Gini / KS / PR-AUC alongside ROC-AUC), and MLflow helpers.
 
 ---
 
 ## EDA highlights
 
-Each section in `[notebooks/01_eda.ipynb](notebooks/01_eda.ipynb)` asks one business question, plots against a portfolio-baseline default rate of **8.1%**, and reports quantified findings:
+Each section in [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) asks one business question, plots against a portfolio-baseline default rate of **8.1%**, and reports quantified findings:
 
 - **Occupation.** Default risk spans **~3.5×** — Low-skill Laborers default at **17.2%** vs Accountants at **4.8%**. The four riskiest roles are ~9% of applicants but ~13% of defaults (concentration curve).
 - **Payment burden** (annuity / income). Default rises from **7.05%** (decile 1) to **8.86%** (decile 8) — only a ~1.8 pp swing, with a notable reversal at decile 10. Signal is real but weak standalone.
@@ -56,13 +56,13 @@ Each section in `[notebooks/01_eda.ipynb](notebooks/01_eda.ipynb)` asks one busi
 
 ## Modelling
 
-`[notebooks/02_modelling.ipynb](notebooks/02_modelling.ipynb)` benchmarks **logistic regression**, **XGBoost**, and **LightGBM** on one feature set (MLflow experiment `credit-risk-modelling`), runs 5-fold stratified CV on the two gradient-boosted models, and produces a side-by-side comparison table. Logistic regression is dropped from the CV (too slow under dense one-hot encoding and already ~1.5 pp AUC behind the tree models) after the single-holdout comparison.
+[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb) benchmarks **logistic regression**, **XGBoost**, and **LightGBM** on one feature set (MLflow experiment `credit-risk-modelling`), runs 5-fold stratified CV on the two gradient-boosted models, and produces a side-by-side comparison table. Logistic regression is dropped from the CV (too slow under dense one-hot encoding and already ~1.5 pp AUC behind the tree models) after the single-holdout comparison.
 
 The **production training run** — tuned XGBoost with `n_estimators=2000, max_depth=4, learning_rate=0.02, reg_lambda=2.0, subsample=0.75` — lives in `src/train.py` and is what the metrics below refer to.
 
 
 
-*Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from_mlflow.py*`
+*Auto-generated from MLflow — refresh with* `uv run python scripts/sync_readme_from_mlflow.py`*.*
 
 **MLflow run** `0c13f97febe74095af4a28fe7e742084` — **xgb_2000_depth4_sub075_lambda2**
 
@@ -84,9 +84,9 @@ ROC and precision–recall (test holdout, same split as training)
 
 ## Calibration and explainability
 
-For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similarly scored accounts, not merely rank applicants. `[notebooks/03_calibration.ipynb](notebooks/03_calibration.ipynb)` compares **Platt** and **isotonic** `CalibratedClassifierCV`, reports Brier score and expected calibration error (ECE), ties thresholds to a simple **business-cost** matrix, and includes a fairness check (AUC by occupation).
+For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similarly scored accounts, not merely rank applicants. [`notebooks/03_calibration.ipynb`](notebooks/03_calibration.ipynb) compares **Platt** and **isotonic** `CalibratedClassifierCV`, reports Brier score and expected calibration error (ECE), ties thresholds to a simple **business-cost** matrix, and includes a fairness check (AUC by occupation).
 
-`[notebooks/04_explainability.ipynb](notebooks/04_explainability.ipynb)` uses SHAP `TreeExplainer` on the preprocessed matrix for global beeswarm plots and per-applicant waterfall explanations.
+[`notebooks/04_explainability.ipynb`](notebooks/04_explainability.ipynb) uses SHAP `TreeExplainer` on the preprocessed matrix for global beeswarm plots and per-applicant waterfall explanations.
 
 
 
@@ -107,13 +107,13 @@ Reliability diagram — mean predicted vs observed default rate (test holdout)
 
 
 
-Training (`uv run python -m src.train`) writes `**model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and `**model/model_calibrated.pkl**` (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus the raw-vs-calibrated reliability figure to MLflow.
+Training (`uv run python -m src.train`) writes **`model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and **`model/model_calibrated.pkl`** (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus the raw-vs-calibrated reliability figure to MLflow.
 
 ---
 
 ## Survival analysis
 
-`[notebooks/05_survival.ipynb](notebooks/05_survival.ipynb)` reframes the problem as **time to serious delinquency** (60-days-late threshold on instalment payments). It builds duration / event labels from `installments_payments`, fits **Kaplan–Meier** curves stratified by XGBoost risk quartile, runs a **multivariate log-rank** test of equality, and fits a **Cox proportional-hazards** model with Schoenfeld-residual checks. The closing section contrasts the binary (origination decision) and survival (servicing / EWI) framings and when each is the right tool.
+[`notebooks/05_survival.ipynb`](notebooks/05_survival.ipynb) reframes the problem as **time to serious delinquency** (60-days-late threshold on instalment payments). It builds duration / event labels from `installments_payments`, fits **Kaplan–Meier** curves stratified by XGBoost risk quartile, runs a **multivariate log-rank** test of equality, and fits a **Cox proportional-hazards** model with Schoenfeld-residual checks. The closing section contrasts the binary (origination decision) and survival (servicing / EWI) framings and when each is the right tool.
 
 ---
 
@@ -250,4 +250,7 @@ The RiskSense UI on GitHub Pages: application intake, scores from the Cloud Run 
 
 ## Stack
 
-Python 3.12 · uv · DuckDB · pandas · scikit-learn · XGBoost · LightGBM · SHAP · lifelines · MLflow (SQLite backend) · matplotlib · FastAPI · Docker · **Google Cloud Run** · SvelteKit · **GitHub Actions** · **GitHub Pages**.
+- **Data & modelling** — Python 3.12, uv, DuckDB, pandas, scikit-learn, XGBoost, LightGBM, SHAP, lifelines
+- **Experiment tracking** — MLflow (SQLite backend), matplotlib
+- **Serving & deployment** — FastAPI, Docker, **Google Cloud Run** (europe-west2)
+- **Frontend & CI** — SvelteKit, **GitHub Actions**, **GitHub Pages**
