@@ -8,13 +8,15 @@ The project is organised as five linked notebooks that together cover the lifecy
 
 ## Headline results
 
-| Metric (test holdout) | Uncalibrated | Isotonic calibrated |
-| --- | --- | --- |
-| **ROC-AUC** | **0.7898** | 0.7891 |
-| **Gini** (2·AUC − 1) | **0.5796** | — |
-| PR-AUC (avg. precision) | 0.2904 | — |
-| KS statistic | 0.4418 | — |
-| Brier score | 0.1709 | **0.0655** |
+
+| Metric (test holdout)   | Uncalibrated | Isotonic calibrated |
+| ----------------------- | ------------ | ------------------- |
+| **ROC-AUC**             | **0.7898**   | 0.7891              |
+| **Gini** (2·AUC − 1)    | **0.5796**   | —                   |
+| PR-AUC (avg. precision) | 0.2904       | —                   |
+| KS statistic            | 0.4418       | —                   |
+| Brier score             | 0.1709       | **0.0655**          |
+
 
 - **Gradient boosting beats a tuned linear baseline by ~1.5 pp AUC** (logistic regression 0.774 → XGBoost 0.789 in the exploration notebook; 0.7898 in the tuned `src/train.py` run).
 - **Isotonic calibration cuts Brier score by 62%** (0.17 → 0.07) with negligible AUC cost, making the output suitable for threshold-based policy decisions, not just ranking.
@@ -24,21 +26,23 @@ The project is organised as five linked notebooks that together cover the lifecy
 
 ## What the project covers
 
-| # | Notebook | Focus | Techniques |
-| --- | --- | --- | --- |
-| 1 | [`01_eda.ipynb`](notebooks/01_eda.ipynb) | **Exploratory analysis** across five business questions | Wilson CIs, concentration (Lorenz-style) curves, heatmaps, stratified defaults |
-| 2 | [`02_modelling.ipynb`](notebooks/02_modelling.ipynb) | **Benchmark + production modelling** | sklearn `Pipeline` + `ColumnTransformer`, logistic / XGBoost / LightGBM, stratified K-fold CV, MLflow logging |
-| 3 | [`03_calibration.ipynb`](notebooks/03_calibration.ipynb) | **Probability calibration for policy use** | Reliability diagrams, Platt vs isotonic, Brier, ECE, cost-based thresholding, fairness (AUC by occupation) |
-| 4 | [`04_explainability.ipynb`](notebooks/04_explainability.ipynb) | **Global and local model explanation** | SHAP `TreeExplainer`, beeswarm and waterfall plots |
-| 5 | [`05_survival.ipynb`](notebooks/05_survival.ipynb) | **Time-to-delinquency modelling** | Kaplan–Meier by risk quartile, multivariate log-rank, Cox PH with Schoenfeld-residual proportional-hazards checks |
 
-Feature engineering lives in **`sql/features/`** (seven files aggregating the full Home Credit schema: application, bureau, bureau balance, credit card balance, POS/cash balance, previous applications, instalments). The EDA layer lives in **`sql/eda/`** (16 parameterised queries — index at [`sql/eda/README.md`](sql/eda/README.md)). The Python package in **`src/`** exposes `build_feature_matrix`, a metrics module (Gini / KS / PR-AUC alongside ROC-AUC), and MLflow helpers.
+| #   | Notebook                                                       | Focus                                                   | Techniques                                                                                                        |
+| --- | -------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | `[01_eda.ipynb](notebooks/01_eda.ipynb)`                       | **Exploratory analysis** across five business questions | Wilson CIs, concentration (Lorenz-style) curves, heatmaps, stratified defaults                                    |
+| 2   | `[02_modelling.ipynb](notebooks/02_modelling.ipynb)`           | **Benchmark + production modelling**                    | sklearn `Pipeline` + `ColumnTransformer`, logistic / XGBoost / LightGBM, stratified K-fold CV, MLflow logging     |
+| 3   | `[03_calibration.ipynb](notebooks/03_calibration.ipynb)`       | **Probability calibration for policy use**              | Reliability diagrams, Platt vs isotonic, Brier, ECE, cost-based thresholding, fairness (AUC by occupation)        |
+| 4   | `[04_explainability.ipynb](notebooks/04_explainability.ipynb)` | **Global and local model explanation**                  | SHAP `TreeExplainer`, beeswarm and waterfall plots                                                                |
+| 5   | `[05_survival.ipynb](notebooks/05_survival.ipynb)`             | **Time-to-delinquency modelling**                       | Kaplan–Meier by risk quartile, multivariate log-rank, Cox PH with Schoenfeld-residual proportional-hazards checks |
+
+
+Feature engineering lives in `**sql/features/`** (seven files aggregating the full Home Credit schema: application, bureau, bureau balance, credit card balance, POS/cash balance, previous applications, instalments). The EDA layer lives in `**sql/eda/**` (16 parameterised queries — index at `[sql/eda/README.md](sql/eda/README.md)`). The Python package in `**src/**` exposes `build_feature_matrix`, a metrics module (Gini / KS / PR-AUC alongside ROC-AUC), and MLflow helpers.
 
 ---
 
 ## EDA highlights
 
-Each section in [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) asks one business question, plots against a portfolio-baseline default rate of **8.1%**, and reports quantified findings:
+Each section in `[notebooks/01_eda.ipynb](notebooks/01_eda.ipynb)` asks one business question, plots against a portfolio-baseline default rate of **8.1%**, and reports quantified findings:
 
 - **Occupation.** Default risk spans **~3.5×** — Low-skill Laborers default at **17.2%** vs Accountants at **4.8%**. The four riskiest roles are ~9% of applicants but ~13% of defaults (concentration curve).
 - **Payment burden** (annuity / income). Default rises from **7.05%** (decile 1) to **8.86%** (decile 8) — only a ~1.8 pp swing, with a notable reversal at decile 10. Signal is real but weak standalone.
@@ -50,60 +54,64 @@ Each section in [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) asks one busi
 
 ## Modelling
 
-[`notebooks/02_modelling.ipynb`](notebooks/02_modelling.ipynb) benchmarks **logistic regression**, **XGBoost**, and **LightGBM** on one feature set (MLflow experiment `credit-risk-modelling`), runs 5-fold stratified CV on the two gradient-boosted models, and produces a side-by-side comparison table. Logistic regression is dropped from the CV (too slow under dense one-hot encoding and already ~1.5 pp AUC behind the tree models) after the single-holdout comparison.
+`[notebooks/02_modelling.ipynb](notebooks/02_modelling.ipynb)` benchmarks **logistic regression**, **XGBoost**, and **LightGBM** on one feature set (MLflow experiment `credit-risk-modelling`), runs 5-fold stratified CV on the two gradient-boosted models, and produces a side-by-side comparison table. Logistic regression is dropped from the CV (too slow under dense one-hot encoding and already ~1.5 pp AUC behind the tree models) after the single-holdout comparison.
 
 The **production training run** — tuned XGBoost with `n_estimators=2000, max_depth=4, learning_rate=0.02, reg_lambda=2.0, subsample=0.75` — lives in `src/train.py` and is what the metrics below refer to.
 
-<!-- MLFLOW_README_SYNC_BEGIN -->
 
-_Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from_mlflow.py`_
+
+*Auto-generated from MLflow — refresh: `uv run python scripts/sync_readme_from_mlflow.py*`
 
 **MLflow run** `0c13f97febe74095af4a28fe7e742084` — **xgb_2000_depth4_sub075_lambda2**
 
-| Metric | Test |
-| --- | --- |
-| ROC-AUC | 0.7907 |
-| Gini (2×AUC − 1) | 0.5814 |
+
+| Metric                     | Test   |
+| -------------------------- | ------ |
+| ROC-AUC                    | 0.7907 |
+| Gini (2×AUC − 1)           | 0.5814 |
 | Average precision (PR-AUC) | 0.2911 |
-| KS statistic | 0.4461 |
-| Accuracy | 0.7484 |
+| KS statistic               | 0.4461 |
+| Accuracy                   | 0.7484 |
 
-![ROC and precision–recall (test holdout, same split as training)](docs/figures/mlflow_eval_curves.png)
 
-<!-- MLFLOW_README_SYNC_END -->
+ROC and precision–recall (test holdout, same split as training)
+
+
 
 ---
 
 ## Calibration and explainability
 
-For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similarly scored accounts, not merely rank applicants. [`notebooks/03_calibration.ipynb`](notebooks/03_calibration.ipynb) compares **Platt** and **isotonic** `CalibratedClassifierCV`, reports Brier score and expected calibration error (ECE), ties thresholds to a simple **business-cost** matrix, and includes a fairness check (AUC by occupation).
+For credit and capital use cases, **calibrated probabilities** matter: a reported 10% default risk should match the long-run default rate among similarly scored accounts, not merely rank applicants. `[notebooks/03_calibration.ipynb](notebooks/03_calibration.ipynb)` compares **Platt** and **isotonic** `CalibratedClassifierCV`, reports Brier score and expected calibration error (ECE), ties thresholds to a simple **business-cost** matrix, and includes a fairness check (AUC by occupation).
 
-[`notebooks/04_explainability.ipynb`](notebooks/04_explainability.ipynb) uses SHAP `TreeExplainer` on the preprocessed matrix for global beeswarm plots and per-applicant waterfall explanations.
+`[notebooks/04_explainability.ipynb](notebooks/04_explainability.ipynb)` uses SHAP `TreeExplainer` on the preprocessed matrix for global beeswarm plots and per-applicant waterfall explanations.
 
-<!-- MLFLOW_CALIB_README_SYNC_BEGIN -->
 
-_Auto-generated from MLflow — same command as the Modelling block._
+
+*Auto-generated from MLflow — same command as the Modelling block.*
 
 **MLflow run** `0c13f97febe74095af4a28fe7e742084` — **xgb_2000_depth4_sub075_lambda2** (isotonic `CalibratedClassifierCV` on a stratified row holdout before booster fit; `calibration_holdout_frac=0.1`).
 
-| Metric | Test holdout |
-| --- | --- |
-| Brier score (uncalibrated) | 0.1715 |
-| Brier score (isotonic calibrated) | 0.0654 |
-| ROC-AUC (uncalibrated) | 0.7907 |
-| ROC-AUC (calibrated proba) | 0.7901 |
 
-![Reliability diagram — mean predicted vs observed default rate (test holdout)](docs/figures/reliability_raw_vs_calibrated.png)
+| Metric                            | Test holdout |
+| --------------------------------- | ------------ |
+| Brier score (uncalibrated)        | 0.1715       |
+| Brier score (isotonic calibrated) | 0.0654       |
+| ROC-AUC (uncalibrated)            | 0.7907       |
+| ROC-AUC (calibrated proba)        | 0.7901       |
 
-<!-- MLFLOW_CALIB_README_SYNC_END -->
 
-Training (`uv run python -m src.train`) writes **`model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and **`model/model_calibrated.pkl`** (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus the raw-vs-calibrated reliability figure to MLflow.
+Reliability diagram — mean predicted vs observed default rate (test holdout)
+
+
+
+Training (`uv run python -m src.train`) writes `**model/model_uncalibrated.pkl`** (preprocess + `XGBClassifier`) and `**model/model_calibrated.pkl**` (isotonic `CalibratedClassifierCV` wrapping the frozen pipeline), and logs both models plus the raw-vs-calibrated reliability figure to MLflow.
 
 ---
 
 ## Survival analysis
 
-[`notebooks/05_survival.ipynb`](notebooks/05_survival.ipynb) reframes the problem as **time to serious delinquency** (60-days-late threshold on instalment payments). It builds duration / event labels from `installments_payments`, fits **Kaplan–Meier** curves stratified by XGBoost risk quartile, runs a **multivariate log-rank** test of equality, and fits a **Cox proportional-hazards** model with Schoenfeld-residual checks. The closing section contrasts the binary (origination decision) and survival (servicing / EWI) framings and when each is the right tool.
+`[notebooks/05_survival.ipynb](notebooks/05_survival.ipynb)` reframes the problem as **time to serious delinquency** (60-days-late threshold on instalment payments). It builds duration / event labels from `installments_payments`, fits **Kaplan–Meier** curves stratified by XGBoost risk quartile, runs a **multivariate log-rank** test of equality, and fits a **Cox proportional-hazards** model with Schoenfeld-residual checks. The closing section contrasts the binary (origination decision) and survival (servicing / EWI) framings and when each is the right tool.
 
 ---
 
@@ -122,15 +130,76 @@ uv run jupyter lab notebooks/
 ```
 
 MLflow UI (experiments, metrics, artefacts, signatures):
+
 ```bash
 uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
 Refresh the Modelling and Calibration blocks in this README (metrics tables + figures) from MLflow:
+
 ```bash
 uv run python scripts/sync_readme_from_mlflow.py --run-id <MLFLOW_RUN_ID>
 ```
+
 The script updates `docs/figures/mlflow_eval_curves.png`, `docs/figures/reliability_raw_vs_calibrated.png`, and the two marked `MLFLOW_*_SYNC` blocks in place.
+
+---
+
+## Scoring API
+
+`src/api.py` serves the calibrated pipeline (`model/model_calibrated.pkl`) as a FastAPI endpoint, containerised with `Dockerfile` and deployed to **Google Cloud Run** (europe-west2, London).
+
+**Live endpoint:** `https://credit-risk-api-679457675772.europe-west2.run.app`
+
+### Deploy from a fresh clone
+
+```bash
+gcloud run deploy credit-risk-api \
+  --source . \
+  --platform managed \
+  --allow-unauthenticated \
+  --memory 1Gi \
+  --cpu 1 \
+  --min-instances 0 \
+  --max-instances 3 \
+  --concurrency 20 \
+  --timeout 60 \
+  --set-env-vars "^@^API_KEY=YOUR_KEY@MODEL_VERSION=v1.0-calibrated@ALLOWED_ORIGINS=https://YOURUSERNAME.github.io,http://localhost:5173"
+```
+
+The `^@^` separator lets commas appear inside individual env-var values (needed for `ALLOWED_ORIGINS`). First build takes 2–4 minutes on Cloud Build.
+
+### Example usage
+
+**Locally** (no API key required — auth check is skipped unless `API_KEY` is set):
+
+```bash
+uv run uvicorn src.api:app --port 8080
+# in another terminal:
+curl -s http://localhost:8080/health
+# {"status":"ok","model_version":"v1.0-calibrated"}
+
+curl -s -X POST http://localhost:8080/predict \
+  -H 'Content-Type: application/json' \
+  -d '{"EXT_SOURCE_2": 0.55, "AMT_CREDIT": 600000, "DAYS_EMPLOYED": -1200}'
+# {"probability":0.13..., "risk_tier":"Medium", "model_version":"v1.0-calibrated", "n_features_provided":3, "elapsed_ms":9.4}
+```
+
+**Against the deployed service** (needs the API key that was passed via `--set-env-vars`):
+
+```bash
+export API_URL=https://credit-risk-api-679457675772.europe-west2.run.app
+export API_KEY=<your-key>
+
+curl -s $API_URL/health
+
+curl -s -X POST $API_URL/predict \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $API_KEY" \
+  -d '{"EXT_SOURCE_2": 0.55, "AMT_CREDIT": 600000, "DAYS_EMPLOYED": -1200}'
+```
+
+Response fields: `probability` (calibrated, in [0, 1]), `risk_tier` (Low/Medium/High), `model_version`, `n_features_provided`, `elapsed_ms` (server-side predict latency). Any column from the 224-feature training schema may be supplied; omitted fields are imputed.
 
 ---
 
@@ -138,30 +207,33 @@ The script updates `docs/figures/mlflow_eval_curves.png`, `docs/figures/reliabil
 
 ```
 credit-risk-ml/
-├── notebooks/         # 01_eda, 02_modelling, 03_calibration, 04_explainability, 05_survival
+├── notebooks/             # 01_eda, 02_modelling, 03_calibration, 04_explainability, 05_survival
 ├── sql/
-│   ├── load.sql       # CSV → DuckDB loader
-│   ├── eda/           # 16 parameterised EDA queries (indexed in eda/README.md)
-│   └── features/      # 7 feature-engineering queries, one per source table
+│   ├── load.sql           # CSV → DuckDB loader
+│   ├── eda/               # 16 parameterised EDA queries (indexed in eda/README.md)
+│   └── features/          # 7 feature-engineering queries, one per source table
 ├── src/
-│   ├── features.py    # build_feature_matrix() — full join + aggregation pipeline
-│   ├── train.py       # XGBoost pipeline, isotonic calibration, MLflow logging
-│   ├── metrics.py     # ROC-AUC, Gini, KS, PR-AUC, ROC/PR plot helpers
-│   └── mlflow_helpers.py
-├── docs/figures/      # Figures embedded in this README (MLflow-synced)
-├── model/             # Trained artefacts (gitignored)
-└── mlflow.db          # SQLite MLflow backend
+│   ├── features.py        # build_feature_matrix() — full join + aggregation pipeline
+│   ├── train.py           # XGBoost pipeline, isotonic calibration, MLflow logging
+│   ├── metrics.py         # ROC-AUC, Gini, KS, PR-AUC, ROC/PR plot helpers
+│   ├── mlflow_helpers.py
+│   └── api.py             # FastAPI app — /health and /predict over the calibrated pipeline
+├── Dockerfile             # Production container (uv sync --no-dev; ~500 MB image)
+├── .dockerignore
+├── docs/figures/          # Figures embedded in this README (MLflow-synced)
+├── model/                 # Trained artefacts (gitignored; model_calibrated.pkl shipped into the container)
+└── mlflow.db              # SQLite MLflow backend - not git-committed
 ```
 
 ---
 
 ## Future work 🔮
 
-- **Deployed scoring service with an explainable front-end.** Wrap `model_calibrated.pkl` in a FastAPI endpoint behind a small web UI where a user can enter applicant details, receive a calibrated probability of default and a readable credit-report summary, and inspect a **SHAP waterfall** that surfaces the largest positive and negative factors driving the score. The groundwork (calibrated pipeline, SHAP `TreeExplainer`, feature schema) already exists in the repo — the remaining work is the API layer, request validation over the ~20 top-SHAP features, and the front-end.
+- **Explainable front-end over the deployed API.** The FastAPI + Cloud Run service is live (see [Scoring API](#scoring-api)); the remaining work is a small SvelteKit/GitHub Pages UI where a user can enter applicant details, receive the calibrated probability, and inspect a **SHAP waterfall** that surfaces the largest positive and negative factors driving the score. The groundwork (calibrated pipeline, SHAP `TreeExplainer`, `/predict` endpoint) is all in place — remaining work is the front-end plus a `/explain` endpoint that returns SHAP values per request.
 - **Known limitations.** The current evaluation is a stratified row split rather than a time-based holdout, so calibration stability over time is untested; the model is trained only on approved applicants and inherits that selection bias; and there is no drift monitoring or champion-challenger tooling around the trained artefact. These are the next tranche of work once the deployed endpoint is in place.
 
 ---
 
 ## Stack
 
-Python 3.12 · uv · DuckDB · pandas · scikit-learn · XGBoost · LightGBM · SHAP · lifelines · MLflow (SQLite backend) · matplotlib.
+Python 3.12 · uv · DuckDB · pandas · scikit-learn · XGBoost · LightGBM · SHAP · lifelines · MLflow (SQLite backend) · matplotlib · FastAPI · Docker · Google Cloud Run.
