@@ -1,0 +1,61 @@
+# Build the SvelteKit static site under `frontend/` and deploy to GitHub Pages.
+# Prerequisites (repository Settings):
+#   - Pages → Source: GitHub Actions
+#   - Pages → Variables: PUBLIC_API_URL, PUBLIC_API_KEY (same values as Cloud Run / local demo)
+# Site URL: https://<owner>.github.io/<repo>/  (base path must match repo name)
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build static site
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          SVELTEKIT_BASE_PATH: /${{ github.event.repository.name }}
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_API_KEY: ${{ vars.PUBLIC_API_KEY }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

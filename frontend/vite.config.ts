@@ -12,12 +12,16 @@ export default defineConfig(({ mode }) => {
 	const url =
 		frontendEnv.PUBLIC_API_URL ||
 		rootEnv.PUBLIC_API_URL ||
+		process.env.PUBLIC_API_URL ||
 		rootEnv.API_URL ||
+		process.env.API_URL ||
 		'';
 	const key =
 		frontendEnv.PUBLIC_API_KEY ||
 		rootEnv.PUBLIC_API_KEY ||
+		process.env.PUBLIC_API_KEY ||
 		rootEnv.API_KEY ||
+		process.env.API_KEY ||
 		'';
 	return {
 		plugins: [sveltekit()],
