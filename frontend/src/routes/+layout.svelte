@@ -7,7 +7,7 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>Credit risk demo</title>
+	<title>RiskSense — credit risk demo</title>
 </svelte:head>
 
 {@render children()}

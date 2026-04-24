@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
+	const HISTORY_KEY = 'credit-risk-simulation-history';
+	const MAX_HISTORY = 40;
+
 	/** Example 5 from `scripts/example_request.txt` — very high risk scenario. */
 	const VERY_HIGH_RISK_PAYLOAD: Record<string, string | number> = {
 		NAME_CONTRACT_TYPE: 'Cash loans',
@@ -46,8 +49,16 @@
 		elapsed_ms: number;
 	};
 
+	type HistoryRow = {
+		id: string;
+		at: number;
+		category: string;
+		amtCredit: number;
+		probability: number;
+		riskTier: string;
+	};
+
 	const rawApiUrl = (import.meta.env.PUBLIC_API_URL ?? '').replace(/\/$/, '');
-	/** In dev, Vite proxies /__credit_risk_api → Cloud Run so CORS does not apply. */
 	const apiUrl =
 		import.meta.env.DEV && rawApiUrl ? '/__credit_risk_api' : rawApiUrl;
 	const apiKey = import.meta.env.PUBLIC_API_KEY ?? '';
@@ -67,8 +78,8 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let prediction = $state<Prediction | null>(null);
-	/** Merged on predict when set (Example 5 extras from `example_request.txt`). */
 	let presetExtras = $state<Record<string, string | number>>({});
+	let history = $state<HistoryRow[]>([]);
 
 	const tierClass = $derived(
 		prediction
@@ -80,6 +91,14 @@
 			: '',
 	);
 
+	const reliabilityScore = $derived(
+		prediction
+			? Math.round(Math.min(980, Math.max(220, 280 + (1 - prediction.probability) * 700)))
+			: null,
+	);
+
+	const gaugePct = $derived(prediction ? Math.min(1, Math.max(0, 1 - prediction.probability)) : 0);
+
 	function wakeBackend() {
 		if (!apiUrl) return;
 		void fetch(`${apiUrl}/health`, {
@@ -88,8 +107,102 @@
 		}).catch(() => {});
 	}
 
+	function readHistory(): HistoryRow[] {
+		if (typeof localStorage === 'undefined') return [];
+		try {
+			const raw = localStorage.getItem(HISTORY_KEY);
+			if (!raw) return [];
+			const parsed = JSON.parse(raw) as unknown;
+			if (!Array.isArray(parsed)) return [];
+			return parsed.filter(
+				(r): r is HistoryRow =>
+					r &&
+					typeof r === 'object' &&
+					'id' in r &&
+					'at' in r &&
+					'category' in r &&
+					'amtCredit' in r &&
+					'probability' in r &&
+					'riskTier' in r,
+			) as HistoryRow[];
+		} catch {
+			return [];
+		}
+	}
+
+	function writeHistory(rows: HistoryRow[]) {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.setItem(HISTORY_KEY, JSON.stringify(rows.slice(0, MAX_HISTORY)));
+	}
+
+	function appendHistory(pred: Prediction) {
+		const id = `CR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+		const category = `${incomeType} · ${occupation}`.slice(0, 48);
+		const row: HistoryRow = {
+			id,
+			at: Date.now(),
+			category,
+			amtCredit,
+			probability: pred.probability,
+			riskTier: pred.risk_tier,
+		};
+		const next = [row, ...history].slice(0, MAX_HISTORY);
+		history = next;
+		writeHistory(next);
+	}
+
+	function statusLabel(tier: string): string {
+		if (tier === 'Low') return 'APPROVED';
+		if (tier === 'Medium') return 'PENDING';
+		return 'REJECTED';
+	}
+
+	function statusClass(tier: string): string {
+		if (tier === 'Low') return 'status-approved';
+		if (tier === 'Medium') return 'status-pending';
+		return 'status-rejected';
+	}
+
+	function formatTime(ts: number) {
+		return new Date(ts).toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+		});
+	}
+
+	function downloadHistoryCsv() {
+		const header = ['Application ID', 'Time', 'Client category', 'Loan USD', 'Default prob', 'Tier', 'Status'];
+		const lines = history.map((h) =>
+			[
+				h.id,
+				new Date(h.at).toISOString(),
+				`"${h.category.replace(/"/g, '""')}"`,
+				String(h.amtCredit),
+				String(h.probability),
+				h.riskTier,
+				statusLabel(h.riskTier),
+			].join(','),
+		);
+		const blob = new Blob([header.join(',') + '\n' + lines.join('\n')], {
+			type: 'text/csv;charset=utf-8',
+		});
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = 'risksense-simulation-history.csv';
+		a.click();
+		URL.revokeObjectURL(a.href);
+	}
+
+	function clearHistory() {
+		history = [];
+		writeHistory([]);
+	}
+
 	onMount(() => {
 		wakeBackend();
+		history = readHistory();
 	});
 
 	function buildPayload(): Record<string, string | number> {
@@ -159,7 +272,9 @@
 						: data;
 				throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
 			}
-			prediction = data as Prediction;
+			const pred = data as Prediction;
+			prediction = pred;
+			appendHistory(pred);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : 'Request failed';
 			if (
@@ -231,71 +346,68 @@
 			extSource1Str = '0.18';
 		}
 	}
+
+	const R = 52;
+	const C = 2 * Math.PI * R;
 </script>
 
-<div class="page">
-	<header class="header">
-		<h1>Credit default risk</h1>
-		<p class="lede">
-			Explore a calibrated XGBoost model trained on Home Credit–style application data. Adjust an
-			applicant profile and request a probability of default from the live API.
-		</p>
-	</header>
+<div class="shell">
+	<nav class="topnav" aria-label="Primary">
+		<a href="#application-information" class="brand">
+			<span class="brand-mark" aria-hidden="true"></span>
+			RiskSense
+		</a>
+		<div class="nav-links">
+			<a href="#application-information">Application information</a>
+			<a href="#profile">Profile</a>
+			<a href="#history">History</a>
+		</div>
+		<div class="nav-trailing">
+			<div class="presets presets--nav" aria-label="Quick presets">
+				<span class="presets-label">Presets</span>
+				<button type="button" class="btn-ghost" onclick={() => applyPreset('safe')}>Safe bet</button>
+				<button type="button" class="btn-ghost" onclick={() => applyPreset('borderline')}>Borderline</button>
+				<button type="button" class="btn-ghost" onclick={() => applyPreset('high')}>High risk</button>
+				<button
+					type="button"
+					class="btn-ghost"
+					title="Extremely high risk (Example 5)"
+					onclick={() => applyPreset('extreme')}>Extreme</button>
+			</div>
+			<div class="nav-actions" aria-hidden="true">
+				<span class="nav-dot"></span>
+				<span class="nav-dot"></span>
+				<span class="nav-avatar"></span>
+			</div>
+		</div>
+	</nav>
 
-	<div class="presets">
-		<span class="presets-label">Quick presets</span>
-		<button type="button" class="btn btn-secondary" onclick={() => applyPreset('safe')}>Safe bet</button>
-		<button type="button" class="btn btn-secondary" onclick={() => applyPreset('borderline')}>
-			Borderline
-		</button>
-		<button type="button" class="btn btn-secondary" onclick={() => applyPreset('high')}>High risk</button>
-		<button type="button" class="btn btn-secondary" onclick={() => applyPreset('extreme')}>
-			Extremely high risk
-		</button>
-	</div>
+	<p class="hero">
+		Analyze borrower reliability with our precision-engineered credit risk engine.
+	</p>
 
-	<div class="grid">
-		<section class="card form-card">
-			<h2>Application details</h2>
-			<form
-				class="form"
-				onsubmit={(e) => {
-					e.preventDefault();
-					predict();
-				}}
-			>
-				<div class="field-row">
-					<label class="field">
-						<span class="label">Loan type</span>
-						<select bind:value={contractType} class="control">
-							<option value="Cash loans">Cash loans</option>
-							<option value="Revolving loans">Revolving loans</option>
-						</select>
-					</label>
-					<label class="field">
-						<span class="label">Gender</span>
-						<select bind:value={gender} class="control">
-							<option value="M">M</option>
-							<option value="F">F</option>
-							<option value="XNA">XNA</option>
-						</select>
-					</label>
-				</div>
+	<!-- Section 1: Application information -->
+	<section id="application-information" class="panel intake">
+		<div class="panel-title-row">
+			<span class="panel-icon" aria-hidden="true">
+				<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+					<polyline points="14 2 14 8 20 8" />
+					<line x1="8" y1="13" x2="16" y2="13" />
+					<line x1="8" y1="17" x2="14" y2="17" />
+				</svg>
+			</span>
+			<h2 class="panel-title">Application information</h2>
+		</div>
 
-				<label class="field">
-					<span class="label">Income type</span>
-					<select bind:value={incomeType} class="control">
-						<option value="Working">Working</option>
-						<option value="Commercial associate">Commercial associate</option>
-						<option value="Pensioner">Pensioner</option>
-						<option value="State servant">State servant</option>
-						<option value="Unemployed">Unemployed</option>
-						<option value="Student">Student</option>
-						<option value="Businessman">Businessman</option>
-						<option value="Maternity leave">Maternity leave</option>
-					</select>
-				</label>
-
+		<form
+			class="intake-form"
+			onsubmit={(e) => {
+				e.preventDefault();
+				predict();
+			}}
+		>
+			<div class="form-grid">
 				<label class="field">
 					<span class="label">Occupation</span>
 					<select bind:value={occupation} class="control">
@@ -314,217 +426,531 @@
 				</label>
 
 				<label class="field">
-					<span class="label">Annual income (US dollars) — {formatUsd(amtIncome)}</span>
-					<input type="range" class="range" min="0" max="600000" step="1000" bind:value={amtIncome} />
+					<span class="label">Employment / income type</span>
+					<select bind:value={incomeType} class="control">
+						<option value="Working">Working</option>
+						<option value="Commercial associate">Commercial associate</option>
+						<option value="Pensioner">Pensioner</option>
+						<option value="State servant">State servant</option>
+						<option value="Unemployed">Unemployed</option>
+						<option value="Student">Student</option>
+						<option value="Businessman">Businessman</option>
+						<option value="Maternity leave">Maternity leave</option>
+					</select>
 				</label>
 
 				<label class="field">
-					<span class="label">Credit amount requested (US dollars) — {formatUsd(amtCredit)}</span>
-					<input type="range" class="range" min="0" max="1500000" step="5000" bind:value={amtCredit} />
+					<span class="label">Annual income (USD)</span>
+					<input type="text" class="control control-readonly" readonly value={formatUsd(amtIncome)} />
 				</label>
-
-				<div class="field-row">
-					<label class="field">
-						<span class="label">Age (years)</span>
-						<input type="number" class="control" min="18" max="90" bind:value={age} />
-					</label>
-					<label class="field">
-						<span class="label">Children</span>
-						<input type="number" class="control" min="0" max="20" bind:value={cntChildren} />
-					</label>
-				</div>
-
-				<label class="field checkbox-field">
-					<input type="checkbox" bind:checked={unemployed} />
-					<span class="label inline">Currently unemployed (uses training sentinel for employment)</span>
-				</label>
-
-				{#if !unemployed}
-					<label class="field">
-						<span class="label">Years in current role</span>
-						<input type="number" class="control" min="0" max="50" step="0.5" bind:value={yearsEmployed} />
-					</label>
-				{/if}
 
 				<label class="field">
-					<span class="label">External score 1 (optional, 0–1)</span>
+					<span class="label">Loan type</span>
+					<select bind:value={contractType} class="control">
+						<option value="Cash loans">Cash loans</option>
+						<option value="Revolving loans">Revolving loans</option>
+					</select>
+				</label>
+
+				<label class="field">
+					<span class="label">Gender</span>
+					<select bind:value={gender} class="control">
+						<option value="M">M</option>
+						<option value="F">F</option>
+						<option value="XNA">XNA</option>
+					</select>
+				</label>
+
+				<label class="field">
+					<span class="label">Credit amount (USD)</span>
+					<input type="text" class="control control-readonly" readonly value={formatUsd(amtCredit)} />
+				</label>
+
+				<label class="field">
+					<span class="label">Age (years)</span>
+					<input type="number" class="control" min="18" max="90" bind:value={age} />
+				</label>
+
+				<label class="field">
+					<span class="label">Dependents (children)</span>
+					<input type="number" class="control" min="0" max="20" bind:value={cntChildren} />
+				</label>
+
+				<label class="field">
+					<span class="label">External score 1 (0–1, optional)</span>
 					<input
 						type="text"
 						inputmode="decimal"
 						class="control"
-						placeholder="omit if unknown"
+						placeholder="—"
 						bind:value={extSource1Str}
 					/>
 				</label>
+			</div>
 
-				<button type="submit" class="btn btn-primary" disabled={loading}>
-					{loading ? 'Scoring…' : 'Get risk score'}
-				</button>
-			</form>
-		</section>
+			<label class="field span-full">
+				<span class="label">Annual income (USD) — adjust</span>
+				<input type="range" class="range" min="0" max="600000" step="1000" bind:value={amtIncome} />
+			</label>
 
-		<section class="card result-card">
-			<h2>Model output</h2>
-			{#if error}
-				<p class="error" role="alert">{error}</p>
-			{:else if prediction}
-				<div class="result {tierClass}">
-					<p class="tier-line">
+			<label class="field span-full">
+				<span class="label">Credit amount requested (USD) — adjust</span>
+				<input type="range" class="range" min="0" max="1500000" step="5000" bind:value={amtCredit} />
+			</label>
+
+			<div class="employment-row span-full">
+				<label class="field checkbox-field employment-check">
+					<input type="checkbox" bind:checked={unemployed} />
+					<span class="label inline">Currently unemployed (training sentinel)</span>
+				</label>
+				{#if !unemployed}
+					<label class="field years-field">
+						<span class="label">Years in current role</span>
+						<input type="number" class="control" min="0" max="50" step="0.5" bind:value={yearsEmployed} />
+					</label>
+				{/if}
+			</div>
+
+			<button type="submit" class="btn-cta" disabled={loading}>
+				<span class="bolt" aria-hidden="true">⚡</span>
+				{loading ? 'Calculating…' : 'Generate risk profile'}
+			</button>
+		</form>
+	</section>
+
+	<!-- Section 2: Calculated Risk Profile -->
+	<section id="profile" class="panel profile">
+		<div class="live-pill" aria-live="polite">
+			<span class="live-dot"></span>
+			LIVE CALCULATION
+		</div>
+		<h2 class="panel-title profile-heading">Calculated Risk Profile</h2>
+
+		<div class="profile-layout">
+			<div class="profile-main">
+				{#if error}
+					<p class="error" role="alert">{error}</p>
+				{:else if prediction}
+					<p class="profile-lede">
+						Calibrated probability of default from the live model. Lower default probability implies a
+						more favorable profile for this demo.
+					</p>
+					<div class="metric-grid">
+						<div class="metric">
+							<span class="metric-label">Default probability</span>
+							<span class="metric-value">{formatPct(prediction.probability)}</span>
+						</div>
+						<div class="metric">
+							<span class="metric-label">Model latency</span>
+							<span class="metric-value">{prediction.elapsed_ms} ms</span>
+						</div>
+						<div class="metric">
+							<span class="metric-label">Features provided</span>
+							<span class="metric-value">{prediction.n_features_provided}</span>
+						</div>
+						<div class="metric">
+							<span class="metric-label">Model version</span>
+							<span class="metric-value metric-mono">{prediction.model_version}</span>
+						</div>
+					</div>
+					<div class="tier-row">
 						<span class="tier-label">Risk band</span>
 						<span class="chip" data-tier={prediction.risk_tier}>{prediction.risk_tier}</span>
-					</p>
-					<p class="score-line">
-						<span class="score-label">Default probability</span>
-						<strong class="score">{formatPct(prediction.probability)}</strong>
-					</p>
+					</div>
 					<div class="bar-track" aria-hidden="true">
 						<div
-							class="bar-fill"
+							class="bar-fill {tierClass}"
 							style:width={`${Math.min(100, prediction.probability * 100)}%`}
 						></div>
 					</div>
-					<dl class="meta">
-						<div>
-							<dt>Model</dt>
-							<dd>{prediction.model_version}</dd>
-						</div>
-						<div>
-							<dt>Features sent</dt>
-							<dd>{prediction.n_features_provided}</dd>
-						</div>
-						<div>
-							<dt>Server time</dt>
-							<dd>{prediction.elapsed_ms} ms</dd>
-						</div>
-					</dl>
-				</div>
-			{:else}
-				<p class="placeholder">Submit the form to see calibrated default probability and a low / medium / high band.</p>
-			{/if}
-		</section>
-	</div>
+				{:else}
+					<p class="placeholder">
+						Run <strong>Generate risk profile</strong> above to populate this panel with default
+						probability, tier, and a reliability ring derived from the score.
+					</p>
+				{/if}
+			</div>
 
-	<section class="card about">
-		<h2>About this demo</h2>
-		<p>
-			The service returns a probability of default and a coarse risk tier. The model was trained on
-			tabular credit-application features; scores are for demonstration only and are not financial
-			advice. Omitted fields are imputed by the same pipeline used in training.
-		</p>
+			<div class="gauge-wrap" aria-hidden={prediction ? undefined : 'true'}>
+				{#if prediction && reliabilityScore !== null}
+					{@const dash = C * gaugePct}
+					<svg class="gauge-svg" viewBox="0 0 120 120" role="img" aria-label="Reliability ring">
+						<circle class="gauge-bg" cx="60" cy="60" r={R} fill="none" />
+						<circle
+							class="gauge-arc {tierClass}"
+							cx="60"
+							cy="60"
+							r={R}
+							fill="none"
+							stroke-dasharray={`${dash} ${C}`}
+							transform="rotate(-90 60 60)"
+						/>
+					</svg>
+					<div class="gauge-center">
+						<span class="gauge-score">{reliabilityScore}</span>
+						<span class="gauge-sub">
+							{prediction.risk_tier === 'Low'
+								? 'FAVORABLE'
+								: prediction.risk_tier === 'Medium'
+									? 'ELEVATED'
+									: 'SEVERE'}
+						</span>
+						<span class="gauge-hint">Reliability index</span>
+					</div>
+				{:else}
+					<div class="gauge-empty">
+						<span class="gauge-score muted">—</span>
+						<span class="gauge-sub">Awaiting run</span>
+					</div>
+				{/if}
+			</div>
+		</div>
 	</section>
+
+	<!-- Section 3: Simulation History -->
+	<section id="history" class="panel history">
+		<div class="history-head">
+			<h2 class="panel-title">Simulation History</h2>
+			<div class="history-toolbar">
+				<button
+					type="button"
+					class="btn-icon"
+					disabled={history.length === 0}
+					onclick={downloadHistoryCsv}
+					title="Download CSV"
+				>
+					↓
+				</button>
+				{#if history.length > 0}
+					<button type="button" class="btn-icon danger" onclick={clearHistory} title="Clear history">
+						⌫
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<div class="table-wrap">
+			{#if history.length === 0}
+				<p class="table-empty">No simulations yet. Generate a risk profile to build your history.</p>
+			{:else}
+				<table class="data-table">
+					<thead>
+						<tr>
+							<th>Application ID</th>
+							<th>Client category</th>
+							<th>Loan amount</th>
+							<th>Risk</th>
+							<th>Status</th>
+							<th>Time</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each history as row (row.id)}
+							<tr>
+								<td class="mono">{row.id}</td>
+								<td class="category">{row.category}</td>
+								<td class="num">{formatUsd(row.amtCredit)}</td>
+								<td class="risk-cell">
+									<span class="risk-pct">{formatPct(row.probability)}</span>
+									<div class="mini-track">
+										<div
+											class="mini-fill {row.riskTier === 'Low'
+												? 'tier-low'
+												: row.riskTier === 'Medium'
+													? 'tier-medium'
+													: 'tier-high'}"
+											style:width={`${Math.min(100, row.probability * 100)}%`}
+										></div>
+									</div>
+								</td>
+								<td>
+									<span class="status-pill {statusClass(row.riskTier)}">{statusLabel(row.riskTier)}</span>
+								</td>
+								<td class="muted time">{formatTime(row.at)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</div>
+	</section>
+
+	<p class="footer-note">
+		Demo only — not financial advice. History is stored in your browser (localStorage) and never sent to a
+		server except the prediction request payload.
+	</p>
 </div>
 
 <style>
-	.page {
-		max-width: var(--max-width);
+	.shell {
+		max-width: 1120px;
 		margin: 0 auto;
-		padding: var(--space-lg) var(--space-md);
-		padding-bottom: calc(var(--space-lg) * 2);
+		padding: var(--space-md) var(--space-md) calc(var(--space-lg) * 2);
 	}
 
-	.header {
-		margin-bottom: var(--space-md);
+	.topnav {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+		flex-wrap: wrap;
+		row-gap: 0.75rem;
+		padding: var(--space-sm) 0 var(--space-md);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		margin-bottom: var(--space-lg);
 	}
 
-	.lede {
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: Manrope, system-ui, sans-serif;
+		font-weight: 700;
+		font-size: 1.25rem;
+		color: var(--on-surface);
+		text-decoration: none;
+		letter-spacing: -0.02em;
+	}
+
+	.brand:hover {
+		color: var(--primary);
+	}
+
+	.brand-mark {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--primary);
+		box-shadow: 0 0 12px rgba(255, 193, 7, 0.6);
+	}
+
+	.nav-trailing {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+		margin-left: auto;
+	}
+
+	.nav-links {
+		display: none;
+		gap: var(--space-md);
+	}
+
+	@media (min-width: 640px) {
+		.nav-links {
+			display: flex;
+			flex: 1;
+			justify-content: center;
+			min-width: 0;
+		}
+	}
+
+	.nav-links a {
 		color: var(--on-surface-variant);
-		font-size: 1.125rem;
-		max-width: 52ch;
+		text-decoration: none;
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
+	.nav-links a:hover {
+		color: var(--primary);
+	}
+
+	.nav-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.nav-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.15);
+	}
+
+	.nav-avatar {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: linear-gradient(135deg, var(--surface-container-high), var(--surface-container-highest));
+		border: 2px solid rgba(255, 193, 7, 0.35);
+	}
+
+	.hero {
+		text-align: center;
+		font-family: Manrope, system-ui, sans-serif;
+		font-size: clamp(1.15rem, 2.5vw, 1.45rem);
+		font-weight: 600;
+		line-height: 1.35;
+		color: var(--on-surface);
+		margin: 0 0 var(--space-lg);
+		max-width: 40em;
+		margin-left: auto;
+		margin-right: auto;
+		letter-spacing: -0.02em;
+	}
+
+	.panel {
+		background: var(--surface-container);
+		border-radius: var(--radius-card);
+		padding: var(--space-md) var(--space-md);
+		margin-bottom: var(--space-md);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+		scroll-margin-top: 1.25rem;
+	}
+
+	.panel-title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		margin-bottom: var(--space-sm);
+	}
+
+	.panel-icon {
+		display: flex;
+		color: var(--primary);
+	}
+
+	.panel-title {
+		font-family: Manrope, system-ui, sans-serif;
+		font-size: 1.35rem;
+		font-weight: 600;
 		margin: 0;
+		letter-spacing: -0.02em;
 	}
 
 	.presets {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: var(--space-sm);
+		gap: 0.35rem;
 		margin-bottom: var(--space-md);
+		padding-bottom: var(--space-md);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.presets--nav {
+		margin-bottom: 0;
+		padding-bottom: 0;
+		border-bottom: none;
+		max-width: min(100%, 28rem);
+		justify-content: flex-end;
+	}
+
+	.presets--nav .btn-ghost {
+		padding: 0.3rem 0.55rem;
+		font-size: 0.72rem;
 	}
 
 	.presets-label {
-		font-size: 0.875rem;
+		font-size: 0.75rem;
 		font-weight: 600;
-		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
 		color: var(--on-surface-variant);
-		margin-right: var(--space-xs);
+		margin-right: 0.25rem;
 	}
 
-	.grid {
+	.btn-ghost {
+		font-family: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		padding: 0.4rem 0.85rem;
+		border-radius: var(--radius-control);
+		border: 1px solid rgba(255, 193, 7, 0.35);
+		background: transparent;
+		color: var(--primary);
+		cursor: pointer;
+	}
+
+	.btn-ghost:hover {
+		background: rgba(255, 193, 7, 0.08);
+	}
+
+	.intake-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md);
+	}
+
+	.form-grid {
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: var(--space-md);
 	}
 
-	@media (min-width: 900px) {
-		.grid {
-			grid-template-columns: 1fr 1fr;
-			align-items: start;
+	@media (min-width: 768px) {
+		.form-grid {
+			grid-template-columns: repeat(3, 1fr);
 		}
 	}
 
-	.card {
-		background: var(--surface-container);
-		border-radius: var(--radius-card);
-		padding: var(--space-md);
-		border: 1px solid transparent;
-		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-	}
-
-	.form {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-md);
-	}
-
-	.field-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--space-sm);
-	}
-
-	@media (max-width: 600px) {
-		.field-row {
-			grid-template-columns: 1fr;
-		}
+	.span-full {
+		grid-column: 1 / -1;
 	}
 
 	.field {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-xs);
+		gap: 0.35rem;
 	}
 
 	.checkbox-field {
 		flex-direction: row;
-		align-items: flex-start;
-		gap: var(--space-sm);
+		align-items: center;
+		gap: 0.65rem;
+	}
+
+	.employment-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-md);
+	}
+
+	.employment-check {
+		flex: 1 1 16rem;
+		min-width: 0;
+		margin: 0;
+	}
+
+	.years-field {
+		flex: 0 0 9rem;
 	}
 
 	.label {
-		font-size: 0.875rem;
+		font-size: 0.8rem;
 		font-weight: 600;
 		letter-spacing: 0.02em;
-		color: var(--on-surface);
+		color: var(--on-surface-variant);
 	}
 
 	.label.inline {
 		font-weight: 500;
+		color: var(--on-surface);
 	}
 
 	.control {
 		font-family: inherit;
-		font-size: 1rem;
+		font-size: 0.95rem;
 		padding: 0.65rem 1rem;
-		border-radius: var(--radius-control);
+		border-radius: 1rem;
 		border: 1px solid var(--input-border);
 		background: var(--input-bg);
 		color: var(--on-surface);
 		outline: none;
-		transition: border-color 0.15s ease;
 	}
 
 	.control:focus-visible {
 		border-color: var(--outline-focus);
+	}
+
+	.control-readonly {
+		opacity: 0.95;
+		cursor: default;
 	}
 
 	select.control {
@@ -534,86 +960,146 @@
 	.range {
 		width: 100%;
 		accent-color: var(--primary);
-		height: 2rem;
+		height: 1.75rem;
 	}
 
-	.btn {
-		font-family: inherit;
+	.btn-cta {
+		width: 100%;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		font-family: Manrope, system-ui, sans-serif;
 		font-size: 1rem;
-		font-weight: 600;
-		padding: 0.75rem 1.5rem;
-		border-radius: var(--radius-control);
-		cursor: pointer;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		padding: 1rem 1.25rem;
 		border: none;
-		transition:
-			opacity 0.15s ease,
-			transform 0.05s ease;
+		border-radius: 1.25rem;
+		background: var(--primary);
+		color: #0a0a0a;
+		cursor: pointer;
+		margin-top: 0.25rem;
 	}
 
-	.btn:disabled {
-		opacity: 0.6;
+	.btn-cta:disabled {
+		opacity: 0.65;
 		cursor: not-allowed;
 	}
 
-	.btn-primary {
-		background: var(--primary);
-		color: #000;
-		align-self: flex-start;
+	.btn-cta:not(:disabled):hover {
+		filter: brightness(1.06);
 	}
 
-	.btn-primary:not(:disabled):hover {
-		filter: brightness(1.05);
+	.bolt {
+		font-size: 1.1rem;
 	}
 
-	.btn-secondary {
-		background: transparent;
+	.live-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.12em;
 		color: var(--primary);
-		border: 2px solid var(--primary);
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
+		border: 1px solid rgba(255, 193, 7, 0.35);
+		padding: 0.35rem 0.75rem;
+		border-radius: var(--radius-control);
+		margin-bottom: 0.65rem;
 	}
 
-	.btn-secondary:hover {
-		background: rgba(255, 193, 7, 0.08);
+	.live-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--primary);
+		animation: pulse 1.8s ease-in-out infinite;
 	}
 
-	.error {
-		color: #ffb4a9;
-		margin: 0;
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
 	}
 
-	.placeholder {
+	.profile-heading {
+		margin-bottom: var(--space-md);
+	}
+
+	.profile-layout {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: var(--space-lg);
+		align-items: center;
+	}
+
+	@media (min-width: 800px) {
+		.profile-layout {
+			grid-template-columns: 1fr minmax(200px, 260px);
+		}
+	}
+
+	.profile-lede {
 		color: var(--on-surface-variant);
-		margin: 0;
-		line-height: 1.6;
+		margin: 0 0 var(--space-md);
+		line-height: 1.55;
+		max-width: 36rem;
 	}
 
-	.result {
-		display: flex;
-		flex-direction: column;
+	.metric-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
 		gap: var(--space-md);
+		margin-bottom: var(--space-md);
 	}
 
-	.tier-line {
+	.metric-label {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--on-surface-variant);
+		margin-bottom: 0.2rem;
+	}
+
+	.metric-value {
+		font-family: Manrope, system-ui, sans-serif;
+		font-size: 1.25rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.metric-mono {
+		font-family: ui-monospace, monospace;
+		font-size: 0.95rem;
+		font-weight: 500;
+	}
+
+	.tier-row {
 		display: flex;
 		align-items: center;
-		gap: var(--space-sm);
-		margin: 0;
-		flex-wrap: wrap;
+		gap: 0.65rem;
+		margin-bottom: 0.75rem;
 	}
 
 	.tier-label {
-		font-size: 0.875rem;
+		font-size: 0.85rem;
 		color: var(--on-surface-variant);
 	}
 
 	.chip {
 		display: inline-flex;
-		align-items: center;
-		padding: 0.35rem 0.85rem;
+		padding: 0.3rem 0.75rem;
 		border-radius: 1rem;
-		font-size: 0.875rem;
-		font-weight: 600;
+		font-size: 0.8rem;
+		font-weight: 700;
 		letter-spacing: 0.02em;
 	}
 
@@ -632,91 +1118,298 @@
 		color: var(--risk-high);
 	}
 
-	.score-line {
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.score-label {
-		font-size: 0.875rem;
-		color: var(--on-surface-variant);
-	}
-
-	.score {
-		font-family: 'Work Sans', system-ui, sans-serif;
-		font-variant-numeric: tabular-nums;
-		font-size: clamp(2rem, 5vw, 2.75rem);
-		font-weight: 700;
-		line-height: 1.1;
-		letter-spacing: -0.02em;
-	}
-
-	.result.tier-low .score {
-		color: var(--risk-low);
-	}
-
-	.result.tier-medium .score {
-		color: var(--risk-medium);
-	}
-
-	.result.tier-high .score {
-		color: var(--risk-high);
-	}
-
 	.bar-track {
-		height: 12px;
+		height: 10px;
 		border-radius: var(--radius-control);
-		background: var(--surface-container-highest);
+		background: rgba(255, 255, 255, 0.06);
 		overflow: hidden;
+		max-width: 28rem;
 	}
 
 	.bar-fill {
 		height: 100%;
 		border-radius: var(--radius-control);
-		background: linear-gradient(90deg, var(--primary-container), #ffdf9e);
-		box-shadow: 0 0 20px rgba(255, 193, 7, 0.35);
 		transition: width 0.35s ease;
 	}
 
-	.result.tier-low .bar-fill {
+	.bar-fill.tier-low {
 		background: linear-gradient(90deg, #2a8f6a, var(--risk-low));
-		box-shadow: 0 0 20px rgba(94, 233, 181, 0.25);
 	}
 
-	.result.tier-high .bar-fill {
-		background: linear-gradient(90deg, #c62828, var(--risk-high));
-		box-shadow: 0 0 20px rgba(255, 107, 107, 0.25);
+	.bar-fill.tier-medium {
+		background: linear-gradient(90deg, #8a6a00, var(--risk-medium));
 	}
 
-	.meta {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-		gap: var(--space-sm);
+	.bar-fill.tier-high {
+		background: linear-gradient(90deg, #a32020, var(--risk-high));
+	}
+
+	.gauge-wrap {
+		position: relative;
+		width: 200px;
+		height: 200px;
+		margin: 0 auto;
+	}
+
+	.gauge-svg {
+		width: 100%;
+		height: 100%;
+	}
+
+	.gauge-bg {
+		stroke: rgba(255, 255, 255, 0.08);
+		stroke-width: 10;
+	}
+
+	.gauge-arc {
+		stroke-width: 10;
+		stroke-linecap: round;
+		transform-origin: 60px 60px;
+	}
+
+	.gauge-arc.tier-low {
+		stroke: #5ee9b5;
+	}
+
+	.gauge-arc.tier-medium {
+		stroke: #ffc107;
+	}
+
+	.gauge-arc.tier-high {
+		stroke: #ff6b6b;
+	}
+
+	.gauge-center {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		pointer-events: none;
+	}
+
+	.gauge-score {
+		font-family: Manrope, system-ui, sans-serif;
+		font-size: 2.35rem;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+		line-height: 1;
+		color: var(--on-surface);
+	}
+
+	.gauge-score.muted {
+		font-size: 1.75rem;
+		opacity: 0.35;
+	}
+
+	.gauge-sub {
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.14em;
+		color: var(--primary);
+		margin-top: 0.35rem;
+	}
+
+	.gauge-hint {
+		font-size: 0.65rem;
+		color: var(--on-surface-variant);
+		margin-top: 0.25rem;
+		letter-spacing: 0.04em;
+	}
+
+	.gauge-empty {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		border: 2px dashed rgba(255, 255, 255, 0.1);
+		border-radius: 50%;
+	}
+
+	.error {
+		color: #ffb4a9;
 		margin: 0;
+	}
+
+	.placeholder {
+		color: var(--on-surface-variant);
+		margin: 0;
+		line-height: 1.6;
+		max-width: 36rem;
+	}
+
+	.history-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+		margin-bottom: var(--space-md);
+	}
+
+	.history-toolbar {
+		display: flex;
+		gap: 0.35rem;
+	}
+
+	.btn-icon {
+		width: 40px;
+		height: 40px;
+		border-radius: 12px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.04);
+		color: var(--on-surface);
+		cursor: pointer;
+		font-size: 1rem;
+		line-height: 1;
+	}
+
+	.btn-icon:hover:not(:disabled) {
+		border-color: var(--primary);
+		color: var(--primary);
+	}
+
+	.btn-icon:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
+	.btn-icon.danger:hover {
+		border-color: #ff6b6b;
+		color: #ff6b6b;
+	}
+
+	.table-wrap {
+		overflow-x: auto;
+		border-radius: 1rem;
+		border: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.table-empty {
+		margin: 0;
+		padding: var(--space-lg);
+		color: var(--on-surface-variant);
+		text-align: center;
+	}
+
+	.data-table {
+		width: 100%;
+		border-collapse: collapse;
 		font-size: 0.875rem;
 	}
 
-	.meta dt {
-		color: var(--on-surface-variant);
-		font-weight: 600;
-		margin: 0 0 0.15rem;
+	.data-table th,
+	.data-table td {
+		padding: 0.85rem 1rem;
+		text-align: left;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 	}
 
-	.meta dd {
-		margin: 0;
+	.data-table th {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--on-surface-variant);
+		font-weight: 700;
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.data-table tbody tr:hover {
+		background: rgba(255, 255, 255, 0.03);
+	}
+
+	.mono {
+		font-family: ui-monospace, monospace;
+		font-size: 0.8rem;
+		color: var(--tertiary);
+		white-space: nowrap;
+	}
+
+	.category {
+		max-width: 14rem;
+		color: var(--on-surface);
+	}
+
+	.num {
 		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 
-	.about {
-		margin-top: var(--space-md);
+	.risk-cell {
+		min-width: 7rem;
 	}
 
-	.about p {
-		margin: 0;
+	.risk-pct {
+		display: block;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		margin-bottom: 0.25rem;
+	}
+
+	.mini-track {
+		height: 6px;
+		border-radius: 99px;
+		background: rgba(255, 255, 255, 0.08);
+		overflow: hidden;
+	}
+
+	.mini-fill {
+		height: 100%;
+		border-radius: 99px;
+		transition: width 0.25s ease;
+	}
+
+	.mini-fill.tier-low {
+		background: var(--risk-low);
+	}
+
+	.mini-fill.tier-medium {
+		background: var(--risk-medium);
+	}
+
+	.mini-fill.tier-high {
+		background: var(--risk-high);
+	}
+
+	.status-pill {
+		display: inline-block;
+		padding: 0.25rem 0.6rem;
+		border-radius: 6px;
+		font-size: 0.68rem;
+		font-weight: 800;
+		letter-spacing: 0.06em;
+	}
+
+	.status-approved {
+		background: rgba(94, 233, 181, 0.15);
+		color: var(--risk-low);
+	}
+
+	.status-pending {
+		background: rgba(255, 255, 255, 0.08);
 		color: var(--on-surface-variant);
-		max-width: 70ch;
-		line-height: 1.6;
+	}
+
+	.status-rejected {
+		background: rgba(255, 107, 107, 0.15);
+		color: var(--risk-high);
+	}
+
+	.muted.time {
+		font-size: 0.8rem;
+		color: var(--on-surface-variant);
+		white-space: nowrap;
+	}
+
+	.footer-note {
+		font-size: 0.8rem;
+		color: var(--on-surface-variant);
+		text-align: center;
+		max-width: 44rem;
+		margin: var(--space-lg) auto 0;
+		line-height: 1.5;
 	}
 </style>
