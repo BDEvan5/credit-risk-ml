@@ -1,8 +1,13 @@
-# Build the SvelteKit static site under `frontend/` and deploy to GitHub Pages.
-# Prerequisites (repository Settings):
-#   - Pages → Source: GitHub Actions
-#   - Pages → Variables: PUBLIC_API_URL, PUBLIC_API_KEY (same values as Cloud Run / local demo)
-# Site URL: https://<owner>.github.io/<repo>/  (base path must match repo name)
+# Build `frontend/` and deploy to GitHub Pages on push to `master`.
+#
+# Debugging a failed run:
+#   1. GitHub → Actions → open the failed "Deploy to GitHub Pages" run.
+#   2. Open the "build" job (red X). Expand each step from the top — the first red step is the failure.
+#   3. Scroll to the bottom of that step’s log for the error (npm / vite / artifact).
+#   4. Re-run with debug: Repo Settings → Actions → General → "Enable debug logging", then re-run jobs.
+#
+# API URL/key: use Repository Variables (Settings → Secrets and variables → Actions → Variables), OR
+# use Repository Secrets with the same names — this workflow passes vars first, then secrets.
 
 name: Deploy to GitHub Pages
 
@@ -27,6 +32,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Print CI context (no secret values)
+        shell: bash
+        env:
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || secrets.PUBLIC_API_URL }}
+          PUBLIC_API_KEY: ${{ vars.PUBLIC_API_KEY || secrets.PUBLIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          echo "node=$(node -v) npm=$(npm -v)"
+          echo "repo=${GITHUB_REPOSITORY}"
+          echo "SVELTEKIT_BASE_PATH will be /${GITHUB_REPOSITORY#*/}"
+          if [ -z "${PUBLIC_API_URL:-}" ]; then
+            echo "::warning::PUBLIC_API_URL is empty. Set Actions Variables or Secrets (same name). Site will build but cannot call the API."
+          else
+            echo "PUBLIC_API_URL is set (length ${#PUBLIC_API_URL})"
+          fi
+          if [ -z "${PUBLIC_API_KEY:-}" ]; then
+            echo "::warning::PUBLIC_API_KEY is empty."
+          else
+            echo "PUBLIC_API_KEY is set (length ${#PUBLIC_API_KEY})"
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -43,12 +69,29 @@ jobs:
         env:
           NODE_ENV: production
           SVELTEKIT_BASE_PATH: /${{ github.event.repository.name }}
-          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
-          PUBLIC_API_KEY: ${{ vars.PUBLIC_API_KEY }}
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || secrets.PUBLIC_API_URL }}
+          PUBLIC_API_KEY: ${{ vars.PUBLIC_API_KEY || secrets.PUBLIC_API_KEY }}
+
+      - name: Verify Pages output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d frontend/build
+          test -f frontend/build/index.html
+          echo "OK: frontend/build contains index.html"
+          ls -la frontend/build | head -30
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/build
+
+      - name: Log tree on failure
+        if: failure()
+        run: |
+          echo "=== frontend (top) ==="
+          ls -la frontend || true
+          echo "=== frontend/build ==="
+          ls -la frontend/build 2>/dev/null || echo "(no build dir)"
 
   deploy:
     needs: build
